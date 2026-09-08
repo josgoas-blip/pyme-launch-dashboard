@@ -1,0 +1,26 @@
+# Dependencias
+node_modules
+dist
+dist-ssr
+
+# Variables de entorno (NO subir claves/tokens - CLAUDE.md regla 3)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# Configuración local de Claude Code (específica de esta máquina)
+.claude/settings.local.json
