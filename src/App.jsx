@@ -8,6 +8,7 @@ import ViabilidadView from './components/dashboard/ViabilidadView.jsx'
 import ConfiguracionView from './components/dashboard/ConfiguracionView.jsx'
 import { PlanProvider } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
+import { guardarDiagnostico } from './services/diagnosticoService.js'
 
 const VISTAS_POR_PESTANA = {
   inicio: InicioView,
@@ -21,8 +22,15 @@ export default function App() {
   /** Diagnóstico del cuestionario previo. `null` = onboarding sin completar. */
   const [respuestasOnboarding, setRespuestasOnboarding] = useState(null)
 
-  /** Recibe las respuestas del wizard y habilita la vista del Dashboard. */
-  const handleOnboardingComplete = (respuestas) => setRespuestasOnboarding(respuestas)
+  /**
+   * Recibe las respuestas del wizard y habilita la vista del Dashboard.
+   * La persistencia va en segundo plano: el acceso al panel no espera a
+   * Supabase, y si la escritura falla el servicio lo encola en memoria.
+   */
+  const handleOnboardingComplete = (respuestas) => {
+    setRespuestasOnboarding(respuestas)
+    guardarDiagnostico(respuestas)
+  }
 
   /**
    * Botón de desarrollo: devuelve al cuestionario sin recargar la sesión.
