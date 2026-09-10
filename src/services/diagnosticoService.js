@@ -113,15 +113,20 @@ export async function guardarDiagnostico(respuestas) {
           meta: { ...(respuestas?.meta ?? {}), cliente_anonimo: obtenerClienteAnonimo() },
         }
 
-    const { data, error } = await supabase
+    // Con sesión se pide la fila de vuelta; en modo anónimo NO. Un insert
+    // con `.select()` genera un INSERT ... RETURNING, y leer esa fila se
+    // evalúa contra la política de SELECT: como el visitante anónimo no
+    // puede verla, PostgreSQL devuelve 42501 aunque la escritura sea
+    // legítima. Sin retorno, la inserción se completa con 201.
+    const consulta = supabase
       .from('diagnosticos')
       .insert({ respuestas: payload, user_id: usuario?.id ?? null })
-      .select('id')
-      .single()
+
+    const { data, error } = usuario ? await consulta.select('id').single() : await consulta
 
     if (error) return encolar(respuestas, error.message)
 
-    return { ok: true, id: data.id }
+    return { ok: true, id: data?.id }
   } catch (e) {
     // Fallo de red: fetch rechaza antes de que Supabase devuelva error.
     return encolar(respuestas, e?.message ?? 'error de red')
