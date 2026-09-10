@@ -1,11 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Coins, MessageSquare, Send, Sparkles, X } from 'lucide-react'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { creditosDelPlan, siguientePlan, PLAN_INFO } from '../../utils/planes.js'
+import { consultarAgente, hayWebhookAgente } from '../../services/agenteService.js'
+import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 
-/** Retardo simulado de la respuesta del agente, hasta conectar la API real. */
+/** Retardo del modo local, para que la respuesta no aparezca de golpe. */
 const RETARDO_RESPUESTA_MS = 900
+
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const formatoEUR = (n) =>
   new Intl.NumberFormat('es-ES', {
@@ -32,9 +36,10 @@ function construirBienvenida(respuestas) {
 }
 
 /**
- * Respuesta simulada del agente (Fase 1 de UI, sin API). Se apoya en los
- * datos ya adaptados del diagnóstico para que las explicaciones citen las
- * cifras reales que el usuario está viendo en los cuadrantes.
+ * Respuesta local de respaldo, solo cuando no hay webhook configurado
+ * (VITE_N8N_WEBHOOK_URL vacía): así un clon sin n8n sigue demostrable. Se
+ * apoya en los datos ya adaptados del diagnóstico para que las
+ * explicaciones citen las cifras reales que el usuario ve en los cuadrantes.
  *
  * @param {string} pregunta - Texto escrito por el usuario.
  * @param {ReturnType<typeof useOnboarding>} contexto - Diagnóstico y datos adaptados.
@@ -75,19 +80,38 @@ function responderSimulado(pregunta, { respuestas, datos }) {
   return `Puedo ayudarte con el punto muerto, los escenarios de viabilidad, el riesgo DAFO o la priorización CAME. Con tu fase actual (${fase_actual}), lo más urgente según el panel es "${proxima_accion}".`
 }
 
-/** Burbuja de un mensaje del hilo. */
-function Burbuja({ autor, texto }) {
+/**
+ * Convierte los marcadores `**negrita**` del LLM en nodos React. No se
+ * interpreta HTML: cada fragmento se inserta como texto, así que una
+ * respuesta manipulada no puede inyectar marcado en el panel.
+ *
+ * @param {string} texto
+ * @returns {Array<string|JSX.Element>}
+ */
+function conNegritas(texto) {
+  return texto.split(/\*\*(.+?)\*\*/g).map((fragmento, indice) =>
+    indice % 2 === 1 ? <strong key={indice}>{fragmento}</strong> : fragmento,
+  )
+}
+
+/** Burbuja de un mensaje del hilo (el aviso de fallo se distingue en ámbar). */
+function Burbuja({ autor, texto, esAviso }) {
   const esAgente = autor === 'agente'
+
+  const estilo = esAviso
+    ? 'border border-accent-amber/30 bg-accent-amber/5 text-main'
+    : esAgente
+      ? 'bg-canvas text-main'
+      : 'bg-primary text-white'
 
   return (
     <div className={`flex ${esAgente ? 'justify-start' : 'justify-end'}`}>
+      {/* El agente responde en Markdown ligero: se respetan sus saltos de
+          línea y se resuelven las negritas. */}
       <div
-        className={[
-          'max-w-[85%] rounded-xl px-3 py-2 text-sm leading-snug',
-          esAgente ? 'bg-canvas text-main' : 'bg-primary text-white',
-        ].join(' ')}
+        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-xl px-3 py-2 text-sm leading-snug ${estilo}`}
       >
-        {texto}
+        {conNegritas(texto)}
       </div>
     </div>
   )
@@ -148,10 +172,11 @@ function CreditosAgotados({ planSuperior, onAccion }) {
  *
  * Los créditos dependen del plan contratado: se guarda el consumo, no el
  * saldo, de modo que al cambiar de plan el cupo se recalcula sin perder ni
- * regalar consultas ya realizadas.
+ * regalar consultas ya realizadas. Solo se descuenta crédito cuando el
+ * agente entrega una respuesta: un fallo de red no se cobra.
  *
- * Fase 1 (UI): las respuestas están simuladas con un retardo natural; el
- * punto de conexión con la API real es `responderSimulado`.
+ * Las respuestas las genera el webhook de n8n (VITE_N8N_WEBHOOK_URL). Sin
+ * webhook configurado, el chat degrada a `responderSimulado`.
  */
 export default function AgenteConsultorFlotante() {
   const contexto = useOnboarding()
@@ -165,15 +190,27 @@ export default function AgenteConsultorFlotante() {
   ])
 
   const finDelHilo = useRef(null)
-  const temporizador = useRef(null)
+  const montado = useRef(true)
+
+  /**
+   * Identidad que viaja al webhook. En modo demo es el identificador
+   * anónimo estable por navegador; cuando exista sesión real, aquí irá el
+   * id del usuario autenticado.
+   */
+  const clienteId = useMemo(() => obtenerClienteAnonimo(), [])
 
   // Mantiene la conversación anclada al último mensaje.
   useEffect(() => {
     finDelHilo.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [mensajes, esperandoRespuesta])
 
-  // Evita que una respuesta pendiente se resuelva sobre un componente ya desmontado.
-  useEffect(() => () => clearTimeout(temporizador.current), [])
+  // Evita que una respuesta en vuelo se aplique sobre un componente desmontado.
+  useEffect(() => {
+    montado.current = true
+    return () => {
+      montado.current = false
+    }
+  }, [])
 
   const cupo = creditosDelPlan(plan)
   const creditos = Math.max(0, cupo - consumidos)
@@ -181,7 +218,7 @@ export default function AgenteConsultorFlotante() {
   const sinCreditos = creditos === 0
   const puedeEnviar = borrador.trim() !== '' && !sinCreditos && !esperandoRespuesta
 
-  const enviar = (e) => {
+  const enviar = async (e) => {
     e.preventDefault()
     if (!puedeEnviar) return
 
@@ -191,17 +228,43 @@ export default function AgenteConsultorFlotante() {
       { id: `u-${Date.now()}`, autor: 'usuario', texto: pregunta },
     ])
     setBorrador('')
-    setConsumidos((actuales) => actuales + 1)
     setEsperandoRespuesta(true)
 
-    // Simulación temporal: sustituir por la llamada al webhook de n8n.
-    temporizador.current = setTimeout(() => {
+    let resultado
+    if (hayWebhookAgente) {
+      resultado = await consultarAgente({
+        mensaje: pregunta,
+        clienteId,
+        respuestasDiagnostico: contexto.respuestas,
+      })
+    } else {
+      // Sin webhook: explicación local, con un retardo que la haga natural.
+      await esperar(RETARDO_RESPUESTA_MS)
+      resultado = { ok: true, respuesta: responderSimulado(pregunta, contexto) }
+    }
+
+    if (!montado.current) return
+
+    if (resultado.ok) {
       setMensajes((actuales) => [
         ...actuales,
-        { id: `a-${Date.now()}`, autor: 'agente', texto: responderSimulado(pregunta, contexto) },
+        { id: `a-${Date.now()}`, autor: 'agente', texto: resultado.respuesta },
       ])
-      setEsperandoRespuesta(false)
-    }, RETARDO_RESPUESTA_MS)
+      // El crédito se cobra solo con una respuesta entregada.
+      setConsumidos((actuales) => actuales + 1)
+    } else {
+      setMensajes((actuales) => [
+        ...actuales,
+        {
+          id: `e-${Date.now()}`,
+          autor: 'agente',
+          esAviso: true,
+          texto: `No he podido conectar con el consultor (${resultado.motivo}). No se ha descontado ningún crédito: vuelve a intentarlo en unos segundos.`,
+        },
+      ])
+    }
+
+    setEsperandoRespuesta(false)
   }
 
   /**
@@ -267,7 +330,7 @@ export default function AgenteConsultorFlotante() {
       {/* Hilo de la conversación */}
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {mensajes.map((m) => (
-          <Burbuja key={m.id} autor={m.autor} texto={m.texto} />
+          <Burbuja key={m.id} autor={m.autor} texto={m.texto} esAviso={m.esAviso} />
         ))}
         {esperandoRespuesta && <Escribiendo />}
         <div ref={finDelHilo} />
@@ -297,7 +360,7 @@ export default function AgenteConsultorFlotante() {
             </button>
           </div>
           <p className="mt-2 text-center text-[10px] text-muted">
-            Cada consulta descuenta 1 crédito · {PLAN_INFO[plan].nombre}: {cupo} incluidos
+            Cada respuesta descuenta 1 crédito · {PLAN_INFO[plan].nombre}: {cupo} incluidos
           </p>
         </form>
       )}
