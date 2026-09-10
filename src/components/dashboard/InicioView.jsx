@@ -1,13 +1,17 @@
-import { controlProyecto, calidadEvidencia, recorridoProyecto } from '../../data/dashboardMock.js'
+import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import TarjetasEjecutivasFase from './TarjetasEjecutivasFase.jsx'
 import CalidadEvidenciaBars from './CalidadEvidenciaBars.jsx'
 import RecorridoProyecto from './RecorridoProyecto.jsx'
 
 /**
  * Ensambla la pestaña "Inicio" — PMV Fase Semilla: "¿Dónde estoy y qué me
- * falta?". Usa los datos simulados de src/data/dashboardMock.js.
+ * falta?". Los datos vienen del diagnóstico adaptado (OnboardingContext),
+ * con los mocks de src/data/dashboardMock.js como respaldo.
  */
 export default function InicioView() {
+  const { datos } = useOnboarding()
+  const { controlProyecto, calidadEvidencia, recorridoProyecto } = datos.inicio
+
   return (
     <div className="space-y-6">
       <TarjetasEjecutivasFase controlProyecto={controlProyecto} />

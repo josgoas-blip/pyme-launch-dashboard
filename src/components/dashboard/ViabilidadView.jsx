@@ -1,7 +1,10 @@
-import { metricasProyectadas, escenariosVan, supuestosClave } from '../../data/viabilidadMock.js'
+import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import IndicadoresViabilidad from './IndicadoresViabilidad.jsx'
 import LineChartEscenarios from './LineChartEscenarios.jsx'
 import SupuestosClave from './SupuestosClave.jsx'
+import PaywallCard from './PaywallCard.jsx'
+import { usePlan } from '../../context/PlanContext.jsx'
+import { tieneAcceso } from '../../utils/planes.js'
 
 /**
  * Ensambla la pestaña "Viabilidad" — "¿Qué muestran los números bajo los
@@ -9,8 +12,27 @@ import SupuestosClave from './SupuestosClave.jsx'
  * proyectadas y un bloque principal de dos columnas (escenarios de flujo de
  * caja + panel de Supuestos Clave). Las cifras son proyecciones
  * condicionadas, no datos de una empresa operativa.
+ *
+ * Gating: pestaña bloqueada por completo con los planes 'report' y
+ * 'assist'. Accesible exclusivamente con 'total'.
  */
 export default function ViabilidadView() {
+  const { plan } = usePlan()
+  const { datos } = useOnboarding()
+  const { metricasProyectadas, escenariosVan, supuestosClave } = datos.viabilidad
+
+  if (!tieneAcceso(plan, 'total')) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center">
+        <PaywallCard
+          planRequerido="total"
+          titulo="La Viabilidad financiera se desbloquea con Launch Total"
+          mensaje="Accede a las proyecciones financieras completas y agenda una sesión con un mentor sénior con Launch Total."
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-8">
       {/* Título principal de la pestaña */}

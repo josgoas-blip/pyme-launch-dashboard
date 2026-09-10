@@ -1,6 +1,9 @@
+import { FlaskConical, RotateCcw } from 'lucide-react'
 import TabNav from './TabNav.jsx'
-import { controlProyecto } from '../../data/dashboardMock.js'
 import { calcularEstadoGlobal } from '../../utils/estadoGlobal.js'
+import { usePlan } from '../../context/PlanContext.jsx'
+import { useOnboarding } from '../../context/OnboardingContext.jsx'
+import { PLANES, PLAN_INFO } from '../../utils/planes.js'
 
 /**
  * Header principal del Dashboard (design.md: color primary #1B4D3E).
@@ -11,6 +14,9 @@ import { calcularEstadoGlobal } from '../../utils/estadoGlobal.js'
  * @param {{ nombreUsuario: string, activeTab: string, onTabChange: (id: string) => void }} props
  */
 export default function Header({ nombreUsuario, activeTab, onTabChange }) {
+  const { plan, setPlan } = usePlan()
+  const { datos, reiniciarOnboarding } = useOnboarding()
+  const { controlProyecto } = datos.inicio
   const estadoGlobal = calcularEstadoGlobal(controlProyecto.progreso_recorrido)
 
   return (
@@ -40,10 +46,44 @@ export default function Header({ nombreUsuario, activeTab, onTabChange }) {
             </div>
           </div>
 
-          {/* Bienvenida personalizada */}
-          <p className="text-sm text-white/80">
-            Bienvenido, <span className="font-semibold text-white">{nombreUsuario}</span>
-          </p>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            {/* Bienvenida personalizada */}
+            <p className="text-sm text-white/80">
+              Bienvenido, <span className="font-semibold text-white">{nombreUsuario}</span>
+            </p>
+
+            {/* Selector temporal de pruebas: alterna el plan activo para QA/demo */}
+            <div
+              className="flex items-center gap-1.5 rounded-full bg-white/10 p-1"
+              title="Selector temporal de pruebas — simula el plan contratado"
+            >
+              <FlaskConical className="ml-1.5 h-3.5 w-3.5 shrink-0 text-white/60" />
+              {PLANES.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlan(p)}
+                  aria-pressed={plan === p}
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                    plan === p ? 'bg-white text-primary' : 'text-white/70 hover:text-white'
+                  }`}
+                >
+                  {PLAN_INFO[p].nombre}
+                </button>
+              ))}
+            </div>
+
+            {/* Utilidad temporal de desarrollo: repite el cuestionario sin recargar */}
+            <button
+              type="button"
+              onClick={reiniciarOnboarding}
+              title="Herramienta de desarrollo — vuelve al cuestionario de onboarding"
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            >
+              <RotateCcw className="h-3 w-3 shrink-0" />
+              Reiniciar Onboarding
+            </button>
+          </div>
         </div>
 
         {/* Navegación de las 5 pestañas */}

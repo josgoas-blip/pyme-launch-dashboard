@@ -30,6 +30,7 @@
  * @property {number} cacCanal - CAC específico del canal (€).
  * @property {number} ltvCacRatio - Ratio LTV/CAC del canal (p.ej. 4.2 = 4.2x).
  * @property {number} roasObjetivo - ROAS objetivo del canal (multiplicador, p.ej. 3.5 = 3.5x).
+ * @property {boolean} [esPrincipal] - Canal principal declarado en el diagnóstico de onboarding.
  */
 
 /**

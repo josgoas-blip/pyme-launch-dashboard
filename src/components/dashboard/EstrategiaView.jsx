@@ -1,11 +1,4 @@
-import {
-  iniciativasCame,
-  mitigacionRiesgos,
-  canalesCaptacion,
-  funnelConversion,
-  escaleraOfertas,
-  accionesSugeridas,
-} from '../../data/estrategiaMock.js'
+import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import BloqueHeader from './BloqueHeader.jsx'
 import MatrizCameScatter from './MatrizCameScatter.jsx'
 import BarraMitigacionRiesgos from './BarraMitigacionRiesgos.jsx'
@@ -13,14 +6,43 @@ import MatrizCanalesCaptacion from './MatrizCanalesCaptacion.jsx'
 import FunnelConversionDigital from './FunnelConversionDigital.jsx'
 import EscaleraOfertasPricing from './EscaleraOfertasPricing.jsx'
 import PlanAccionCameDetail from './PlanAccionCameDetail.jsx'
+import PaywallCard from './PaywallCard.jsx'
+import { usePlan } from '../../context/PlanContext.jsx'
+import { tieneAcceso } from '../../utils/planes.js'
 
 /**
  * Ensambla la pestaña "Estrategia" — "¿Qué debería trabajar ahora?": 3
  * bloques de lectura progresiva (1) Priorización CAME y Plan de
  * Mitigación, (2) Adquisición y Funnel de Conversión Digital,
  * (3) Monetización y Acciones Sugeridas.
+ *
+ * Gating: pestaña bloqueada por completo con el plan 'report'. Requiere,
+ * como mínimo, 'assist'.
  */
 export default function EstrategiaView() {
+  const { plan } = usePlan()
+  const { datos } = useOnboarding()
+  const {
+    iniciativasCame,
+    mitigacionRiesgos,
+    canalesCaptacion,
+    funnelConversion,
+    escaleraOfertas,
+    accionesSugeridas,
+  } = datos.estrategia
+
+  if (!tieneAcceso(plan, 'assist')) {
+    return (
+      <div className="flex min-h-[420px] items-center justify-center">
+        <PaywallCard
+          planRequerido="assist"
+          titulo="La Estrategia se desbloquea con Launch Assist"
+          mensaje="Prioriza iniciativas, canales de captación y tu plan de acción con el acompañamiento de Launch Assist."
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-10">
       {/* Título principal de la pestaña */}

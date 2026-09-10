@@ -38,7 +38,12 @@ export default function MatrizCanalesCaptacion({ canalesCaptacion }) {
               const salud = saludRatio(canal.ltvCacRatio)
               return (
                 <tr key={canal.id} className="border-b border-card-border last:border-0">
-                  <td className="py-3 pr-3 font-medium text-main">{canal.canal}</td>
+                  <td className="py-3 pr-3 font-medium text-main">
+                    {canal.canal}
+                    {canal.esPrincipal && (
+                      <Badge className="ml-2 bg-primary/10 text-primary">Principal</Badge>
+                    )}
+                  </td>
                   <td className="px-3 py-3 text-right text-main">{formatEUR(canal.inversionEstimada)}/mes</td>
                   <td className="px-3 py-3 text-right text-muted">{formatEUR(canal.cacCanal)}</td>
                   <td className="px-3 py-3 text-right font-semibold text-main">{canal.ltvCacRatio.toFixed(1)}x</td>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Header from './Header.jsx'
 import { TABS } from './TabNav.jsx'
+import AgenteConsultorFlotante from '../chat/AgenteConsultorFlotante.jsx'
 
 /**
  * Cascarón base del Dashboard (Fase 2 del plan maestro).
@@ -21,6 +22,9 @@ export default function AppLayout({ nombreUsuario, children }) {
       <Header nombreUsuario={nombreUsuario} activeTab={activeTab} onTabChange={setActiveTab} />
 
       <main className="mx-auto max-w-6xl px-6 py-8">{children(activeTab)}</main>
+
+      {/* Consultor IA flotante: disponible en las 5 pestañas */}
+      <AgenteConsultorFlotante />
     </div>
   )
 }
