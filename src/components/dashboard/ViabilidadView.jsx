@@ -2,6 +2,7 @@ import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import IndicadoresViabilidad from './IndicadoresViabilidad.jsx'
 import LineChartEscenarios from './LineChartEscenarios.jsx'
 import SupuestosClave from './SupuestosClave.jsx'
+import SemaforoSupervivencia from '../SemaforoSupervivencia.jsx'
 import PaywallCard from './PaywallCard.jsx'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { tieneAcceso } from '../../utils/planes.js'
@@ -48,6 +49,9 @@ export default function ViabilidadView() {
 
       {/* Fila superior: 4 métricas principales proyectadas */}
       <IndicadoresViabilidad metricasProyectadas={metricasProyectadas} />
+
+      {/* Semáforo de supervivencia: tesorería y estructura de capital declaradas */}
+      <SemaforoSupervivencia />
 
       {/* Bloque principal: gráfico de escenarios + panel de Supuestos Clave */}
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_320px]">
