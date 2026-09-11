@@ -3,114 +3,91 @@ import { ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { Card } from '../ui/Card.jsx'
 import {
   CAMPOS_CANTIDAD,
-  ETIQUETAS_ESCALA,
   OPCIONES_AUTORIZACION,
   VALORES_POR_DEFECTO,
   calcularDiagnostico,
   normalizarVariables,
 } from '../../utils/scoreDiagnostico.js'
+import {
+  INDICE_OPCION_POR_DEFECTO,
+  PREGUNTAS_TFM,
+  VALORES_INICIALES_TFM,
+  preguntasDelBloque,
+} from '../../data/preguntasDiagnostico.js'
 
 /**
- * Las 20 variables del modelo de evaluación del TFM, repartidas en los 4
- * pasos del cuestionario. Los `id` coinciden exactamente con las columnas
- * de la tabla `diagnosticos`, de modo que el payload viaja sin traducción
- * ni a Supabase ni a n8n.
+ * Campos heterogéneos del bloque 4 (permiso legal, euros, meses y un
+ * booleano). No admiten tarjetas cualitativas, así que se definen aquí con
+ * el control que les corresponde. Sus `id` coinciden con las columnas de
+ * la tabla `diagnosticos`.
+ */
+const CAMPOS_FINANCIEROS = [
+  {
+    id: 'p17_autorizacion_espana',
+    tipo: 'opciones',
+    titulo: '¿Dispones de autorización para trabajar y emprender en España?',
+    opciones: OPCIONES_AUTORIZACION,
+  },
+  {
+    id: 'p18_inversion_total',
+    tipo: 'euros',
+    titulo: 'Inversión total estimada para arrancar',
+    ayuda: 'Todo lo necesario hasta tener el negocio operativo.',
+  },
+  {
+    id: 'p18_recursos_propios',
+    tipo: 'euros',
+    titulo: 'De esa inversión, ¿cuánto son recursos propios?',
+    ayuda: 'Ahorros o aportaciones que no tienes que devolver.',
+  },
+  {
+    id: 'p19_meses_colchon',
+    tipo: 'meses',
+    titulo: 'Meses de colchón financiero disponibles',
+    ayuda: 'Cuánto tiempo puedes sostener gastos sin ingresos suficientes.',
+  },
+  {
+    id: 'p19_meses_breakeven',
+    tipo: 'meses',
+    titulo: 'Meses estimados hasta el punto de equilibrio',
+  },
+  {
+    id: 'p20_incidencias_financieras',
+    tipo: 'booleano',
+    titulo: '¿Tienes incidencias financieras activas?',
+    ayuda: 'Impagos, inclusión en registros de morosidad o embargos.',
+  },
+]
+
+/**
+ * Los 4 pasos del cuestionario. Las preguntas cualitativas vienen del
+ * catálogo del TFM (src/data/preguntasDiagnostico.js); el paso 4 añade
+ * después los campos financieros y legales.
  */
 export const BLOQUES = [
   {
     id: 'validacion_mercado',
     titulo: 'Validación y Mercado',
     descripcion: 'Qué sabes de tu cliente y qué has contrastado con él.',
-    preguntas: [
-      {
-        id: 'p1_idea_negocio',
-        texto: '¿Tienes definida tu idea de negocio?',
-        ayuda: 'Qué vendes, a quién y cómo lo entregas.',
-      },
-      { id: 'p2_problema_necesidad', texto: '¿Has identificado el problema o la necesidad que resuelves?' },
-      { id: 'p3_cliente_principal', texto: '¿Tienes definido tu cliente principal?' },
-      { id: 'p4_hablado_clientes', texto: '¿Has hablado directamente con clientes potenciales?' },
-      { id: 'p5_encuestas_entrevistas', texto: '¿Has realizado encuestas o entrevistas estructuradas?' },
-      {
-        id: 'p6_intencion_compra',
-        texto: '¿Has obtenido señales reales de intención de compra?',
-        ayuda: 'Reservas, preventas, cartas de intención o listas de espera.',
-      },
-      { id: 'p7_aprendizaje_cambios', texto: '¿Has cambiado algo del proyecto a partir de lo aprendido?' },
-    ],
+    preguntas: preguntasDelBloque(1),
   },
   {
     id: 'modelo_competencia',
     titulo: 'Modelo Comercial y Competencia',
     descripcion: 'Cómo ganas dinero y en qué te diferencias.',
-    preguntas: [
-      { id: 'p8_identificado_competencia', texto: '¿Has identificado a tu competencia directa e indirecta?' },
-      { id: 'p9_propuesta_valor', texto: '¿Tu propuesta de valor te diferencia de esa competencia?' },
-      { id: 'p10_modelo_ingresos', texto: '¿Tienes definido tu modelo de ingresos?' },
-      {
-        id: 'p11_precio_logica',
-        texto: '¿La lógica de tus precios está justificada?',
-        ayuda: 'Con costes, márgenes y referencias de mercado.',
-      },
-      { id: 'p12_primeros_clientes', texto: '¿Tienes identificados a tus primeros clientes?' },
-    ],
+    preguntas: preguntasDelBloque(2),
   },
   {
     id: 'operaciones_equipo',
     titulo: 'Operaciones y Equipo',
     descripcion: 'Con qué medios y con quién vas a ejecutarlo.',
-    preguntas: [
-      {
-        id: 'p13_necesidades_operativas',
-        texto: '¿Has definido tus necesidades operativas?',
-        ayuda: 'Proveedores, herramientas, local, licencias o logística.',
-      },
-      { id: 'p14_mvp_prototipo', texto: '¿Dispones de un MVP, prototipo o servicio mínimo en marcha?' },
-      { id: 'p15_experiencia_equipo', texto: '¿El equipo tiene experiencia en el sector o en gestión?' },
-    ],
+    preguntas: preguntasDelBloque(3),
   },
   {
     id: 'solvencia_financiera',
     titulo: 'Viabilidad Financiera y Legal',
     descripcion: 'Con cuánto cuentas y durante cuánto tiempo puedes aguantar.',
-    preguntas: [
-      { id: 'p16_previsiones_financieras', texto: '¿Has elaborado previsiones financieras?' },
-      {
-        id: 'p17_autorizacion_espana',
-        tipo: 'opciones',
-        texto: '¿Dispones de autorización para trabajar y emprender en España?',
-        opciones: OPCIONES_AUTORIZACION,
-      },
-      {
-        id: 'p18_inversion_total',
-        tipo: 'euros',
-        texto: 'Inversión total estimada para arrancar',
-        ayuda: 'Todo lo necesario hasta tener el negocio operativo.',
-      },
-      {
-        id: 'p18_recursos_propios',
-        tipo: 'euros',
-        texto: 'De esa inversión, ¿cuánto son recursos propios?',
-        ayuda: 'Ahorros o aportaciones que no tienes que devolver.',
-      },
-      {
-        id: 'p19_meses_colchon',
-        tipo: 'meses',
-        texto: 'Meses de colchón financiero disponibles',
-        ayuda: 'Cuánto tiempo puedes sostener gastos sin ingresos suficientes.',
-      },
-      {
-        id: 'p19_meses_breakeven',
-        tipo: 'meses',
-        texto: 'Meses estimados hasta el punto de equilibrio',
-      },
-      {
-        id: 'p20_incidencias_financieras',
-        tipo: 'booleano',
-        texto: '¿Tienes incidencias financieras activas?',
-        ayuda: 'Impagos, inclusión en registros de morosidad o embargos.',
-      },
-    ],
+    preguntas: [...preguntasDelBloque(4), ...CAMPOS_FINANCIEROS],
   },
 ]
 
@@ -195,47 +172,50 @@ function BarraProgreso({ pasoActual, totalPasos, titulo }) {
 }
 
 /**
- * Escala Likert 1-5 en botones. Son radios reales (navegables con
- * teclado) con aspecto de píldora; debajo se recuerda qué significan los
- * extremos, para que el número no quede huérfano de sentido.
+ * Opciones cualitativas del TFM como tarjetas seleccionables: etiqueta en
+ * negrita y descripción debajo. Son radios reales, navegables con teclado.
+ *
+ * La selección se identifica por el ÍNDICE de la opción, no por su
+ * puntuación: en p1 las cinco opciones valen 4, así que comparar por valor
+ * marcaría las cinco a la vez.
  */
-function EscalaLikert({ idPregunta, valor, onCambiar }) {
+function TarjetasOpciones({ idPregunta, opciones, indiceElegido, onElegir }) {
   return (
-    <div className="mt-3">
-      <fieldset>
-        <legend className="sr-only">Valora de 1 a 5</legend>
-        <div className="flex flex-wrap gap-2">
-          {ETIQUETAS_ESCALA.map((etiqueta, indice) => {
-            const puntuacion = indice + 1
-            const activa = Number(valor) === puntuacion
-            return (
-              <label key={puntuacion} htmlFor={`${idPregunta}-${puntuacion}`} className="cursor-pointer">
-                <input
-                  id={`${idPregunta}-${puntuacion}`}
-                  type="radio"
-                  name={idPregunta}
-                  value={puntuacion}
-                  checked={activa}
-                  onChange={() => onCambiar(puntuacion)}
-                  className="peer sr-only"
-                />
-                <span
-                  title={etiqueta}
-                  className={[
-                    'flex h-9 w-9 items-center justify-center rounded-full border text-sm font-bold transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2',
-                    activa
-                      ? 'border-primary bg-primary text-white'
-                      : 'border-card-border bg-surface text-muted hover:border-primary/40',
-                  ].join(' ')}
-                >
-                  {puntuacion}
-                </span>
-              </label>
-            )
-          })}
-        </div>
-      </fieldset>
-    </div>
+    <fieldset className="mt-3">
+      <legend className="sr-only">Selecciona la opción que mejor te describe</legend>
+      <div className="flex flex-col gap-2">
+        {opciones.map((opcion, indice) => {
+          const activa = indiceElegido === indice
+          return (
+            <label
+              key={`${idPregunta}-${indice}`}
+              htmlFor={`${idPregunta}-${indice}`}
+              className="block cursor-pointer"
+            >
+              <input
+                id={`${idPregunta}-${indice}`}
+                type="radio"
+                name={idPregunta}
+                checked={activa}
+                onChange={() => onElegir(indice, opcion)}
+                className="peer sr-only"
+              />
+              <span
+                className={[
+                  'flex flex-col gap-0.5 rounded-xl border p-3 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2',
+                  activa
+                    ? 'border-primary bg-primary/5'
+                    : 'border-card-border bg-surface hover:border-primary/40',
+                ].join(' ')}
+              >
+                <span className="text-sm font-bold leading-snug text-main">{opcion.etiqueta}</span>
+                <span className="text-xs leading-snug text-muted">{opcion.desc}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }
 
@@ -306,11 +286,21 @@ function CampoNumerico({ idPregunta, valor, sufijo, onCambiar, error }) {
 }
 
 /** Una pregunta con el control que le corresponda según su tipo. */
-function Pregunta({ pregunta, valor, onCambiar, error }) {
+function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, error }) {
   return (
     <div className="border-b border-card-border pb-5 last:border-0 last:pb-0">
-      <p className="text-sm font-semibold leading-snug text-main">{pregunta.texto}</p>
+      <p className="text-sm font-semibold leading-snug text-main">{pregunta.titulo}</p>
       {pregunta.ayuda && <p className="mt-0.5 text-xs text-muted">{pregunta.ayuda}</p>}
+
+      {/* Preguntas cualitativas del TFM: sin `tipo` y con opciones descritas. */}
+      {!pregunta.tipo && pregunta.opciones && (
+        <TarjetasOpciones
+          idPregunta={pregunta.id}
+          opciones={pregunta.opciones}
+          indiceElegido={indiceElegido}
+          onElegir={onElegirOpcion}
+        />
+      )}
 
       {pregunta.tipo === 'opciones' && (
         <GrupoOpciones
@@ -343,9 +333,6 @@ function Pregunta({ pregunta, valor, onCambiar, error }) {
         />
       )}
 
-      {!pregunta.tipo && (
-        <EscalaLikert idPregunta={pregunta.id} valor={valor} onCambiar={onCambiar} />
-      )}
     </div>
   )
 }
@@ -398,7 +385,17 @@ export default function OnboardingWizard({ onComplete }) {
   const [paso, setPaso] = useState(PASO_CONSENTIMIENTO)
   const [consentimientoDatos, setConsentimientoDatos] = useState(false)
   const [terminosAceptados, setTerminosAceptados] = useState(false)
-  const [valores, setValores] = useState(VALORES_POR_DEFECTO)
+  /** Puntuaciones internas (lo que consumen el score y Supabase). */
+  const [valores, setValores] = useState({ ...VALORES_POR_DEFECTO, ...VALORES_INICIALES_TFM })
+
+  /**
+   * Opción elegida en cada pregunta cualitativa, por índice. Se guarda
+   * aparte porque la puntuación no identifica la opción (en p1 todas
+   * valen 4) y porque su etiqueta es contexto útil para el agente.
+   */
+  const [seleccion, setSeleccion] = useState(
+    Object.fromEntries(PREGUNTAS_TFM.map((p) => [p.id, INDICE_OPCION_POR_DEFECTO])),
+  )
 
   const bloqueActual = paso > PASO_CONSENTIMIENTO && paso < PASO_FINAL ? BLOQUES[paso - 1] : null
 
@@ -406,6 +403,21 @@ export default function OnboardingWizard({ onComplete }) {
   const irAdelante = () => setPaso((actual) => Math.min(PASO_FINAL, actual + 1))
 
   const cambiarValor = (id, valor) => setValores((actuales) => ({ ...actuales, [id]: valor }))
+
+  /** Al elegir una tarjeta se guardan a la vez su índice y su puntuación. */
+  const elegirOpcion = (id, indice, opcion) => {
+    setSeleccion((actuales) => ({ ...actuales, [id]: indice }))
+    cambiarValor(id, opcion.valor)
+  }
+
+  /** Etiqueta cualitativa elegida en cada pregunta del TFM. */
+  const etiquetasElegidas = () =>
+    Object.fromEntries(
+      PREGUNTAS_TFM.map((pregunta) => [
+        pregunta.id,
+        pregunta.opciones[seleccion[pregunta.id]]?.etiqueta ?? null,
+      ]),
+    )
 
   /** Campos numéricos vacíos, no numéricos o negativos. */
   const errores = {}
@@ -434,6 +446,9 @@ export default function OnboardingWizard({ onComplete }) {
       fase_embudo,
       dimensiones,
       penalizaciones,
+      // Contexto cualitativo para el agente: la puntuación sola no dice
+      // qué respondió el usuario (en p1, las 5 opciones valen igual).
+      etiquetas: etiquetasElegidas(),
       meta: {
         consentimientoDatos,
         terminosAceptados,
@@ -508,21 +523,16 @@ export default function OnboardingWizard({ onComplete }) {
             <h2 className="text-xl font-bold leading-snug text-main">{bloqueActual.titulo}</h2>
             <p className="mt-1 text-sm text-muted">{bloqueActual.descripcion}</p>
 
-            {/* La leyenda de la escala se enuncia una vez por bloque, no bajo cada pregunta. */}
-            {bloqueActual.preguntas.some((pregunta) => !pregunta.tipo) && (
-              <p className="mt-3 inline-flex self-start rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
-                1 = {ETIQUETAS_ESCALA[0]} · 5 = {ETIQUETAS_ESCALA[4]}
-              </p>
-            )}
-
             <div className="mt-6 space-y-5">
               {bloqueActual.preguntas.map((pregunta) => (
                 <Pregunta
                   key={pregunta.id}
                   pregunta={pregunta}
                   valor={valores[pregunta.id]}
+                  indiceElegido={seleccion[pregunta.id]}
                   error={errores[pregunta.id]}
                   onCambiar={(valor) => cambiarValor(pregunta.id, valor)}
+                  onElegirOpcion={(indice, opcion) => elegirOpcion(pregunta.id, indice, opcion)}
                 />
               ))}
             </div>
