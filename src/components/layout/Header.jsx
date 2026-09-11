@@ -32,7 +32,7 @@ export default function Header({ nombreUsuario, activeTab, onTabChange }) {
                 type="button"
                 onClick={() => onTabChange('inicio')}
                 aria-label="Pyme Launch — ir a Inicio"
-                className="block rounded-xl bg-white px-3 py-2 shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+                className="inline-flex items-center rounded-lg bg-white px-3 py-1 shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
               >
                 <img
                   src="/logo-pymelaunch.png"

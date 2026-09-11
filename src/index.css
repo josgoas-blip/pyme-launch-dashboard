@@ -6,6 +6,10 @@
 @layer base {
   html {
     font-family: 'Inter', system-ui, sans-serif;
+    /* El Dashboard solo tiene paleta clara. Declararlo evita que el "auto
+       dark mode" del navegador reescriba fondos y deje textos ilegibles
+       (checkboxes de consentimiento, entre otros). */
+    color-scheme: light;
   }
   body {
     @apply bg-canvas text-main antialiased;

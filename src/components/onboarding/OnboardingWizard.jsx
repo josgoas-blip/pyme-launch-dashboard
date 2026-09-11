@@ -50,6 +50,7 @@ const CAMPOS_FINANCIEROS = [
     id: 'p19_meses_breakeven',
     tipo: 'meses',
     titulo: 'Meses estimados hasta el punto de equilibrio',
+    ayuda: 'Mes en el que los ingresos igualan los costes y dejas de operar a pérdidas.',
   },
   {
     id: 'p20_incidencias_financieras',
@@ -123,12 +124,17 @@ function BotonAtras({ onClick, children }) {
   )
 }
 
-/** Casilla de verificación con etiqueta larga, alineada arriba. */
+/**
+ * Casilla de verificación con etiqueta larga, alineada arriba.
+ * El texto se pinta siempre en gris oscuro sobre la tarjeta clara: es
+ * legible en todo momento, sin depender de hover, foco ni del tema del
+ * sistema operativo.
+ */
 function CasillaLegal({ id, checked, onChange, children }) {
   return (
     <label
       htmlFor={id}
-      className="flex cursor-pointer items-start gap-3 rounded-xl border border-card-border bg-canvas p-4 text-left transition-colors hover:border-primary/40"
+      className="flex cursor-pointer items-start rounded-xl border border-card-border bg-canvas p-4 text-left transition-colors hover:border-primary/40"
     >
       <input
         id={id}
@@ -137,7 +143,7 @@ function CasillaLegal({ id, checked, onChange, children }) {
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-card-border text-primary focus:ring-primary/40"
       />
-      <span className="text-sm leading-snug text-main">{children}</span>
+      <span className="ml-2 cursor-pointer text-sm leading-snug text-gray-600">{children}</span>
     </label>
   )
 }
@@ -467,7 +473,7 @@ export default function OnboardingWizard({ onComplete }) {
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-6 py-5">
           {/* Misma identidad que el Dashboard: logotipo sobre fondo claro
               para que el verde corporativo contraste con la cabecera. */}
-          <h1 className="shrink-0 rounded-xl bg-white px-3 py-2 shadow-sm">
+          <h1 className="inline-flex shrink-0 items-center rounded-lg bg-white px-3 py-1 shadow-sm">
             <img
               src="/logo-pymelaunch.png"
               alt="Pyme Launch"
@@ -502,7 +508,7 @@ export default function OnboardingWizard({ onComplete }) {
               onChange={setConsentimientoDatos}
             >
               Acepto el tratamiento de mis datos de forma anónima y confidencial con fines
-              informativos.
+              informativos y de diagnóstico.
             </CasillaLegal>
 
             <div className="flex justify-end">
@@ -574,7 +580,7 @@ export default function OnboardingWizard({ onComplete }) {
               checked={terminosAceptados}
               onChange={setTerminosAceptados}
             >
-              He leído y acepto los términos del servicio y la política de privacidad de Pyme Launch.
+              Confirmo que deseo generar el informe y acceder al panel de control con estos datos.
             </CasillaLegal>
 
             <div className="flex items-center justify-between">
