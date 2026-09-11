@@ -23,13 +23,25 @@ export default function Header({ nombreUsuario, activeTab, onTabChange }) {
     <header className="bg-primary text-white">
       <div className="mx-auto max-w-6xl px-6">
         <div className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
-          {/* Isotipo (solo el cohete, sin texto) + nombre + distintivo */}
+          {/* Logotipo oficial (enlaza a Inicio) + distintivos de estado */}
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 p-2">
-              <img src="/logo-icon.png" alt="Isotipo Pyme Launch" className="h-full w-full object-contain" />
-            </span>
+            {/* El logotipo es verde corporativo sobre transparente: necesita
+                fondo claro para tener contraste sobre la cabecera verde. */}
+            <h1 className="shrink-0">
+              <button
+                type="button"
+                onClick={() => onTabChange('inicio')}
+                aria-label="Pyme Launch — ir a Inicio"
+                className="block rounded-xl bg-white px-3 py-2 shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-primary"
+              >
+                <img
+                  src="/logo-pymelaunch.png"
+                  alt="Pyme Launch"
+                  className="h-8 w-auto object-contain md:h-9"
+                />
+              </button>
+            </h1>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold leading-none text-white">Pyme Launch</h1>
               <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
                 Panel de Control
               </span>

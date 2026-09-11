@@ -465,15 +465,18 @@ export default function OnboardingWizard({ onComplete }) {
       {/* Cabecera sobria: solo marca, sin navegación (el Dashboard aún no está visible) */}
       <header className="bg-primary text-white">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-6 py-5">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 p-2">
-            <img src="/logo-icon.png" alt="Isotipo Pyme Launch" className="h-full w-full object-contain" />
+          {/* Misma identidad que el Dashboard: logotipo sobre fondo claro
+              para que el verde corporativo contraste con la cabecera. */}
+          <h1 className="shrink-0 rounded-xl bg-white px-3 py-2 shadow-sm">
+            <img
+              src="/logo-pymelaunch.png"
+              alt="Pyme Launch"
+              className="h-8 w-auto object-contain md:h-9"
+            />
+          </h1>
+          <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
+            Evaluación diagnóstica
           </span>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold leading-none text-white">Pyme Launch</h1>
-            <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
-              Evaluación diagnóstica
-            </span>
-          </div>
         </div>
       </header>
 

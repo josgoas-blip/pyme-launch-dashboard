@@ -23,13 +23,19 @@ export default function ViabilidadView() {
   const { metricasProyectadas, escenariosVan, supuestosClave } = datos.viabilidad
 
   if (!tieneAcceso(plan, 'total')) {
+    // El semáforo queda exento del paywall: es un indicador de riesgo
+    // construido con datos que el propio usuario ha declarado.
     return (
-      <div className="flex min-h-[420px] items-center justify-center">
-        <PaywallCard
-          planRequerido="total"
-          titulo="La Viabilidad financiera se desbloquea con Launch Total"
-          mensaje="Accede a las proyecciones financieras completas y agenda una sesión con un mentor sénior con Launch Total."
-        />
+      <div className="space-y-8">
+        <SemaforoSupervivencia />
+
+        <div className="flex min-h-[320px] items-center justify-center">
+          <PaywallCard
+            planRequerido="total"
+            titulo="La Viabilidad financiera se desbloquea con Launch Total"
+            mensaje="Accede a las proyecciones financieras completas y agenda una sesión con un mentor sénior con Launch Total."
+          />
+        </div>
       </div>
     )
   }
