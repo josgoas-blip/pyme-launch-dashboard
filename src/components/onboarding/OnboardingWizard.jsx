@@ -26,6 +26,7 @@ const CAMPOS_FINANCIEROS = [
     id: 'p17_autorizacion_espana',
     tipo: 'opciones',
     titulo: '¿Dispones de autorización para trabajar y emprender en España?',
+    ayuda: 'Licencias de actividad, permisos sectoriales o situación administrativa legal para operar el negocio en España.',
     opciones: OPCIONES_AUTORIZACION,
   },
   {
@@ -143,7 +144,12 @@ function CasillaLegal({ id, checked, onChange, children }) {
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-card-border text-primary focus:ring-primary/40"
       />
-      <span className="ml-2 cursor-pointer text-sm leading-snug text-gray-600">{children}</span>
+      {/* Texto estático e incondicional: no depende de `checked`, de
+          pseudo-clases ni de transiciones. Se lee desde el primer render,
+          con la casilla marcada o sin marcar. */}
+      <span className="ml-2 select-none text-sm font-normal leading-snug text-gray-700">
+        {children}
+      </span>
     </label>
   )
 }
