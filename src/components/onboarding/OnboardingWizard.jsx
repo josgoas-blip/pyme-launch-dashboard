@@ -1,85 +1,122 @@
 import { useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { Card } from '../ui/Card.jsx'
+import {
+  CAMPOS_CANTIDAD,
+  ETIQUETAS_ESCALA,
+  OPCIONES_AUTORIZACION,
+  VALORES_POR_DEFECTO,
+  calcularDiagnostico,
+  normalizarVariables,
+} from '../../utils/scoreDiagnostico.js'
 
 /**
- * Cuestionario diagnóstico previo al Dashboard.
- * Fuente única de verdad de las 6 preguntas: cada una con selección única
- * (A, B, C, D). `valor` es la clave estable que consumirá el Dashboard;
- * `etiqueta` es el texto legible para mostrar en pantalla o en informes.
+ * Las 20 variables del modelo de evaluación del TFM, repartidas en los 4
+ * pasos del cuestionario. Los `id` coinciden exactamente con las columnas
+ * de la tabla `diagnosticos`, de modo que el payload viaja sin traducción
+ * ni a Supabase ni a n8n.
  */
-export const PREGUNTAS = [
+export const BLOQUES = [
   {
-    id: 'fase_proyecto',
-    titulo: '¿En qué fase se encuentra tu proyecto?',
-    ayuda: 'Nos permite calibrar el nivel de madurez del recorrido.',
-    opciones: [
-      { id: 'A', valor: 'idea', etiqueta: 'Idea', descripcion: 'Concepto definido, todavía sin clientes.' },
-      { id: 'B', valor: 'validacion', etiqueta: 'Validación', descripcion: 'Primeras ventas o pruebas con clientes reales.' },
-      { id: 'C', valor: 'traccion', etiqueta: 'Tracción', descripcion: 'Ingresos recurrentes y demanda sostenida.' },
-      { id: 'D', valor: 'consolidacion', etiqueta: 'Consolidación', descripcion: 'Negocio estable que busca escalar.' },
+    id: 'validacion_mercado',
+    titulo: 'Validación y Mercado',
+    descripcion: 'Qué sabes de tu cliente y qué has contrastado con él.',
+    preguntas: [
+      {
+        id: 'p1_idea_negocio',
+        texto: '¿Tienes definida tu idea de negocio?',
+        ayuda: 'Qué vendes, a quién y cómo lo entregas.',
+      },
+      { id: 'p2_problema_necesidad', texto: '¿Has identificado el problema o la necesidad que resuelves?' },
+      { id: 'p3_cliente_principal', texto: '¿Tienes definido tu cliente principal?' },
+      { id: 'p4_hablado_clientes', texto: '¿Has hablado directamente con clientes potenciales?' },
+      { id: 'p5_encuestas_entrevistas', texto: '¿Has realizado encuestas o entrevistas estructuradas?' },
+      {
+        id: 'p6_intencion_compra',
+        texto: '¿Has obtenido señales reales de intención de compra?',
+        ayuda: 'Reservas, preventas, cartas de intención o listas de espera.',
+      },
+      { id: 'p7_aprendizaje_cambios', texto: '¿Has cambiado algo del proyecto a partir de lo aprendido?' },
     ],
   },
   {
-    id: 'modelo_negocio',
-    titulo: '¿Cuál es tu modelo de negocio principal?',
-    ayuda: 'Determina los comparables sectoriales del análisis.',
-    opciones: [
-      { id: 'A', valor: 'b2b_servicios', etiqueta: 'B2B Servicios', descripcion: 'Servicios profesionales a otras empresas.' },
-      { id: 'B', valor: 'saas_digital', etiqueta: 'SaaS / Digital', descripcion: 'Producto digital o suscripción de software.' },
-      { id: 'C', valor: 'comercio_b2c', etiqueta: 'Comercio / B2C', descripcion: 'Venta directa al consumidor final.' },
-      { id: 'D', valor: 'otro', etiqueta: 'Otro', descripcion: 'Modelo mixto o distinto a los anteriores.' },
+    id: 'modelo_competencia',
+    titulo: 'Modelo Comercial y Competencia',
+    descripcion: 'Cómo ganas dinero y en qué te diferencias.',
+    preguntas: [
+      { id: 'p8_identificado_competencia', texto: '¿Has identificado a tu competencia directa e indirecta?' },
+      { id: 'p9_propuesta_valor', texto: '¿Tu propuesta de valor te diferencia de esa competencia?' },
+      { id: 'p10_modelo_ingresos', texto: '¿Tienes definido tu modelo de ingresos?' },
+      {
+        id: 'p11_precio_logica',
+        texto: '¿La lógica de tus precios está justificada?',
+        ayuda: 'Con costes, márgenes y referencias de mercado.',
+      },
+      { id: 'p12_primeros_clientes', texto: '¿Tienes identificados a tus primeros clientes?' },
     ],
   },
   {
-    id: 'canal_captacion',
-    titulo: '¿Cuál es tu canal principal de captación?',
-    ayuda: 'Alimenta la matriz de canales y el embudo de conversión.',
-    opciones: [
-      { id: 'A', valor: 'meta_ads', etiqueta: 'Meta Ads', descripcion: 'Publicidad de pago en Facebook e Instagram.' },
-      { id: 'B', valor: 'seo_contenido', etiqueta: 'SEO / Contenido', descripcion: 'Posicionamiento orgánico y contenidos.' },
-      { id: 'C', valor: 'contacto_directo', etiqueta: 'Contacto directo', descripcion: 'Prospección comercial, red de contactos o referidos.' },
-      { id: 'D', valor: 'redes_organicas', etiqueta: 'Redes sociales', descripcion: 'Comunidad y publicaciones orgánicas.' },
+    id: 'operaciones_equipo',
+    titulo: 'Operaciones y Equipo',
+    descripcion: 'Con qué medios y con quién vas a ejecutarlo.',
+    preguntas: [
+      {
+        id: 'p13_necesidades_operativas',
+        texto: '¿Has definido tus necesidades operativas?',
+        ayuda: 'Proveedores, herramientas, local, licencias o logística.',
+      },
+      { id: 'p14_mvp_prototipo', texto: '¿Dispones de un MVP, prototipo o servicio mínimo en marcha?' },
+      { id: 'p15_experiencia_equipo', texto: '¿El equipo tiene experiencia en el sector o en gestión?' },
     ],
   },
   {
-    id: 'facturacion_mensual',
-    titulo: '¿Cuál es tu facturación mensual estimada actualmente?',
-    ayuda: 'Base de cálculo del punto de equilibrio y de las proyecciones.',
-    opciones: [
-      { id: 'A', valor: 'sin_ingresos', etiqueta: 'Todavía sin ingresos', descripcion: 'Aún no hay facturación recurrente.' },
-      { id: 'B', valor: 'hasta_3k', etiqueta: 'Hasta 3.000 €/mes', descripcion: 'Primeros ingresos irregulares.' },
-      { id: 'C', valor: 'de_3k_a_15k', etiqueta: 'Entre 3.000 € y 15.000 €/mes', descripcion: 'Facturación consolidada en crecimiento.' },
-      { id: 'D', valor: 'mas_de_15k', etiqueta: 'Más de 15.000 €/mes', descripcion: 'Volumen estable y estructura definida.' },
-    ],
-  },
-  {
-    id: 'costes_fijos',
-    titulo: '¿A cuánto ascienden tus costes fijos mensuales?',
-    ayuda: 'Imprescindible para el umbral de rentabilidad y el margen de seguridad.',
-    opciones: [
-      { id: 'A', valor: 'menos_1k', etiqueta: 'Menos de 1.000 €', descripcion: 'Estructura mínima, sin cargas relevantes.' },
-      { id: 'B', valor: 'de_1k_a_3k', etiqueta: 'Entre 1.000 € y 3.000 €', descripcion: 'Autónomo con gastos recurrentes.' },
-      { id: 'C', valor: 'de_3k_a_10k', etiqueta: 'Entre 3.000 € y 10.000 €', descripcion: 'Equipo reducido o local propio.' },
-      { id: 'D', valor: 'mas_de_10k', etiqueta: 'Más de 10.000 €', descripcion: 'Estructura consolidada con equipo.' },
-    ],
-  },
-  {
-    id: 'reto_prioritario',
-    titulo: '¿Cuál es hoy el reto prioritario de tu negocio?',
-    ayuda: 'Ordena las recomendaciones de la matriz de priorización CAME.',
-    opciones: [
-      { id: 'A', valor: 'captar_clientes', etiqueta: 'Captar clientes de forma constante', descripcion: 'La demanda es irregular o insuficiente.' },
-      { id: 'B', valor: 'rentabilidad', etiqueta: 'Alcanzar la rentabilidad', descripcion: 'Hay ventas, pero el margen no cubre la estructura.' },
-      { id: 'C', valor: 'procesos_equipo', etiqueta: 'Ordenar procesos y equipo', descripcion: 'El crecimiento supera la capacidad operativa.' },
-      { id: 'D', valor: 'financiacion', etiqueta: 'Financiación y tesorería', descripcion: 'Se necesita liquidez o capital para avanzar.' },
+    id: 'solvencia_financiera',
+    titulo: 'Viabilidad Financiera y Legal',
+    descripcion: 'Con cuánto cuentas y durante cuánto tiempo puedes aguantar.',
+    preguntas: [
+      { id: 'p16_previsiones_financieras', texto: '¿Has elaborado previsiones financieras?' },
+      {
+        id: 'p17_autorizacion_espana',
+        tipo: 'opciones',
+        texto: '¿Dispones de autorización para trabajar y emprender en España?',
+        opciones: OPCIONES_AUTORIZACION,
+      },
+      {
+        id: 'p18_inversion_total',
+        tipo: 'euros',
+        texto: 'Inversión total estimada para arrancar',
+        ayuda: 'Todo lo necesario hasta tener el negocio operativo.',
+      },
+      {
+        id: 'p18_recursos_propios',
+        tipo: 'euros',
+        texto: 'De esa inversión, ¿cuánto son recursos propios?',
+        ayuda: 'Ahorros o aportaciones que no tienes que devolver.',
+      },
+      {
+        id: 'p19_meses_colchon',
+        tipo: 'meses',
+        texto: 'Meses de colchón financiero disponibles',
+        ayuda: 'Cuánto tiempo puedes sostener gastos sin ingresos suficientes.',
+      },
+      {
+        id: 'p19_meses_breakeven',
+        tipo: 'meses',
+        texto: 'Meses estimados hasta el punto de equilibrio',
+      },
+      {
+        id: 'p20_incidencias_financieras',
+        tipo: 'booleano',
+        texto: '¿Tienes incidencias financieras activas?',
+        ayuda: 'Impagos, inclusión en registros de morosidad o embargos.',
+      },
     ],
   },
 ]
 
-/** Índices de paso: 0 = consentimiento, 1..N = preguntas, N + 1 = pantalla final. */
+/** Índices de paso: 0 = consentimiento, 1..4 = bloques, 5 = pantalla final. */
 const PASO_CONSENTIMIENTO = 0
-const PASO_FINAL = PREGUNTAS.length + 1
+const PASO_FINAL = BLOQUES.length + 1
 
 /** Botón primario del wizard (verde corporativo; en gris cuando está deshabilitado). */
 function BotonPrimario({ disabled, onClick, children }) {
@@ -129,14 +166,14 @@ function CasillaLegal({ id, checked, onChange, children }) {
 }
 
 /** Barra de progreso superior del cuestionario. */
-function BarraProgreso({ pasoActual, totalPasos }) {
+function BarraProgreso({ pasoActual, totalPasos, titulo }) {
   const porcentaje = Math.round((pasoActual / totalPasos) * 100)
 
   return (
     <div className="mb-6">
       <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-muted">
         <span>
-          Pregunta {pasoActual} de {totalPasos}
+          Paso {pasoActual} de {totalPasos} · {titulo}
         </span>
         <span>{porcentaje}%</span>
       </div>
@@ -157,45 +194,82 @@ function BarraProgreso({ pasoActual, totalPasos }) {
   )
 }
 
-/** Lista de opciones de selección única (radios accesibles con aspecto de tarjeta). */
-function OpcionesPregunta({ pregunta, seleccion, onSeleccionar }) {
+/**
+ * Escala Likert 1-5 en botones. Son radios reales (navegables con
+ * teclado) con aspecto de píldora; debajo se recuerda qué significan los
+ * extremos, para que el número no quede huérfano de sentido.
+ */
+function EscalaLikert({ idPregunta, valor, onCambiar }) {
   return (
-    <fieldset className="mt-6">
-      <legend className="sr-only">{pregunta.titulo}</legend>
-      <div className="flex flex-col gap-3">
-        {pregunta.opciones.map((opcion) => {
-          const activa = seleccion === opcion.id
+    <div className="mt-3">
+      <fieldset>
+        <legend className="sr-only">Valora de 1 a 5</legend>
+        <div className="flex flex-wrap gap-2">
+          {ETIQUETAS_ESCALA.map((etiqueta, indice) => {
+            const puntuacion = indice + 1
+            const activa = Number(valor) === puntuacion
+            return (
+              <label key={puntuacion} htmlFor={`${idPregunta}-${puntuacion}`} className="cursor-pointer">
+                <input
+                  id={`${idPregunta}-${puntuacion}`}
+                  type="radio"
+                  name={idPregunta}
+                  value={puntuacion}
+                  checked={activa}
+                  onChange={() => onCambiar(puntuacion)}
+                  className="peer sr-only"
+                />
+                <span
+                  title={etiqueta}
+                  className={[
+                    'flex h-9 w-9 items-center justify-center rounded-full border text-sm font-bold transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2',
+                    activa
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-card-border bg-surface text-muted hover:border-primary/40',
+                  ].join(' ')}
+                >
+                  {puntuacion}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
+    </div>
+  )
+}
+
+/** Grupo de opciones excluyentes en píldoras (autorización legal, sí/no). */
+function GrupoOpciones({ idPregunta, opciones, valor, onCambiar }) {
+  return (
+    <fieldset className="mt-3">
+      <legend className="sr-only">Selecciona una opción</legend>
+      <div className="flex flex-wrap gap-2">
+        {opciones.map((opcion) => {
+          const activa = valor === opcion.valor
           return (
-            <label key={opcion.id} htmlFor={`${pregunta.id}-${opcion.id}`} className="block cursor-pointer">
+            <label
+              key={String(opcion.valor)}
+              htmlFor={`${idPregunta}-${opcion.valor}`}
+              className="cursor-pointer"
+            >
               <input
-                id={`${pregunta.id}-${opcion.id}`}
+                id={`${idPregunta}-${opcion.valor}`}
                 type="radio"
-                name={pregunta.id}
-                value={opcion.id}
+                name={idPregunta}
                 checked={activa}
-                onChange={() => onSeleccionar(opcion.id)}
+                onChange={() => onCambiar(opcion.valor)}
                 className="peer sr-only"
               />
               <span
                 className={[
-                  'flex items-start gap-3 rounded-xl border p-4 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2',
+                  'inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-primary/40 peer-focus-visible:ring-offset-2',
                   activa
-                    ? 'border-primary bg-primary/5'
-                    : 'border-card-border bg-surface hover:border-primary/40',
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-card-border bg-surface text-muted hover:border-primary/40',
                 ].join(' ')}
               >
-                <span
-                  className={[
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors',
-                    activa ? 'bg-primary text-white' : 'bg-canvas text-muted',
-                  ].join(' ')}
-                >
-                  {opcion.id}
-                </span>
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-sm font-semibold text-main">{opcion.etiqueta}</span>
-                  <span className="text-xs leading-snug text-muted">{opcion.descripcion}</span>
-                </span>
+                {opcion.etiqueta}
               </span>
             </label>
           )
@@ -205,20 +279,116 @@ function OpcionesPregunta({ pregunta, seleccion, onSeleccionar }) {
   )
 }
 
+/** Campo numérico con sufijo (€ o meses) y aviso de validación en línea. */
+function CampoNumerico({ idPregunta, valor, sufijo, onCambiar, error }) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-center gap-2">
+        <input
+          id={idPregunta}
+          type="number"
+          inputMode="numeric"
+          min="0"
+          step={sufijo === '€' ? '100' : '1'}
+          value={valor}
+          onChange={(e) => onCambiar(e.target.value)}
+          aria-invalid={Boolean(error)}
+          className={[
+            'w-40 rounded-xl border bg-surface px-3 py-2 text-sm font-semibold text-main focus:outline-none focus:ring-2 focus:ring-primary/20',
+            error ? 'border-accent-red' : 'border-card-border focus:border-primary',
+          ].join(' ')}
+        />
+        <span className="text-sm font-semibold text-muted">{sufijo}</span>
+      </div>
+      {error && <p className="mt-1 text-[11px] font-semibold text-accent-red">{error}</p>}
+    </div>
+  )
+}
+
+/** Una pregunta con el control que le corresponda según su tipo. */
+function Pregunta({ pregunta, valor, onCambiar, error }) {
+  return (
+    <div className="border-b border-card-border pb-5 last:border-0 last:pb-0">
+      <p className="text-sm font-semibold leading-snug text-main">{pregunta.texto}</p>
+      {pregunta.ayuda && <p className="mt-0.5 text-xs text-muted">{pregunta.ayuda}</p>}
+
+      {pregunta.tipo === 'opciones' && (
+        <GrupoOpciones
+          idPregunta={pregunta.id}
+          opciones={pregunta.opciones}
+          valor={valor}
+          onCambiar={onCambiar}
+        />
+      )}
+
+      {pregunta.tipo === 'booleano' && (
+        <GrupoOpciones
+          idPregunta={pregunta.id}
+          opciones={[
+            { valor: true, etiqueta: 'Sí' },
+            { valor: false, etiqueta: 'No' },
+          ]}
+          valor={valor}
+          onCambiar={onCambiar}
+        />
+      )}
+
+      {(pregunta.tipo === 'euros' || pregunta.tipo === 'meses') && (
+        <CampoNumerico
+          idPregunta={pregunta.id}
+          valor={valor}
+          sufijo={pregunta.tipo === 'euros' ? '€' : 'meses'}
+          onCambiar={onCambiar}
+          error={error}
+        />
+      )}
+
+      {!pregunta.tipo && (
+        <EscalaLikert idPregunta={pregunta.id} valor={valor} onCambiar={onCambiar} />
+      )}
+    </div>
+  )
+}
+
+/** Resultado del diagnóstico mostrado en la pantalla final. */
+function ResumenScore({ score, fase }) {
+  return (
+    <div className="flex items-center justify-center gap-6 rounded-xl border border-card-border bg-canvas p-4">
+      <div className="text-center">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Score</p>
+        <p className="text-3xl font-extrabold text-main">{score}</p>
+        <p className="text-[11px] text-muted">sobre 100</p>
+      </div>
+      <div className="h-12 w-px bg-card-border" />
+      <div className="text-center">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Fase del embudo</p>
+        <p className="mt-1 text-lg font-bold text-primary">{fase}</p>
+      </div>
+    </div>
+  )
+}
+
 /**
- * Wizard de Onboarding: consentimiento legal, 6 preguntas de diagnóstico
- * (una por pantalla) y pantalla final de validación. Al terminar entrega las
- * respuestas al contenedor mediante `onComplete`, para que éste habilite el
- * AppLayout con los datos ya calibrados.
+ * Wizard de Onboarding: consentimiento legal, las 20 variables del modelo
+ * de evaluación del TFM repartidas en 4 pasos y una pantalla final que
+ * muestra el score obtenido antes de entrar al Dashboard.
  *
- * Forma del objeto entregado a `onComplete`:
+ * Todas las preguntas arrancan con un valor por defecto razonable, así que
+ * el usuario nunca queda bloqueado: puede avanzar y afinar solo lo que
+ * conoce. La única validación dura son los campos numéricos del paso 4,
+ * que deben ser números no negativos.
+ *
+ * Objeto entregado a `onComplete` (claves idénticas a las columnas de la
+ * tabla `diagnosticos`):
  *   {
- *     fase_proyecto:       { opcion: 'B', valor: 'validacion', etiqueta: 'Validación' },
- *     modelo_negocio:      { opcion, valor, etiqueta },
- *     canal_captacion:     { opcion, valor, etiqueta },
- *     facturacion_mensual: { opcion, valor, etiqueta },
- *     costes_fijos:        { opcion, valor, etiqueta },
- *     reto_prioritario:    { opcion, valor, etiqueta },
+ *     p1_idea_negocio: 4, … p16_previsiones_financieras: 3,   // Likert 1-5
+ *     p17_autorizacion_espana: 'si' | 'tramite' | 'no',
+ *     p18_inversion_total: 12000, p18_recursos_propios: 5000,
+ *     p19_meses_colchon: 6, p19_meses_breakeven: 9,
+ *     p20_incidencias_financieras: false,
+ *     score_total: 62, fase_embudo: 'Tracción',
+ *     dimensiones: { validacion_mercado: 70, … },
+ *     penalizaciones: [ … ],
  *     meta: { consentimientoDatos, terminosAceptados, completadoEn },
  *   }
  *
@@ -228,30 +398,42 @@ export default function OnboardingWizard({ onComplete }) {
   const [paso, setPaso] = useState(PASO_CONSENTIMIENTO)
   const [consentimientoDatos, setConsentimientoDatos] = useState(false)
   const [terminosAceptados, setTerminosAceptados] = useState(false)
-  /** Respuestas en bruto: { [idPregunta]: 'A' | 'B' | 'C' | 'D' } */
-  const [selecciones, setSelecciones] = useState({})
+  const [valores, setValores] = useState(VALORES_POR_DEFECTO)
 
-  const preguntaActual = paso > PASO_CONSENTIMIENTO && paso < PASO_FINAL ? PREGUNTAS[paso - 1] : null
-  const seleccionActual = preguntaActual ? selecciones[preguntaActual.id] : undefined
+  const bloqueActual = paso > PASO_CONSENTIMIENTO && paso < PASO_FINAL ? BLOQUES[paso - 1] : null
 
   const irAtras = () => setPaso((actual) => Math.max(PASO_CONSENTIMIENTO, actual - 1))
   const irAdelante = () => setPaso((actual) => Math.min(PASO_FINAL, actual + 1))
 
-  const seleccionar = (idPregunta, idOpcion) =>
-    setSelecciones((actuales) => ({ ...actuales, [idPregunta]: idOpcion }))
+  const cambiarValor = (id, valor) => setValores((actuales) => ({ ...actuales, [id]: valor }))
 
-  /** Traduce las selecciones (A/B/C/D) al objeto enriquecido que consume el Dashboard. */
+  /** Campos numéricos vacíos, no numéricos o negativos. */
+  const errores = {}
+  for (const id of CAMPOS_CANTIDAD) {
+    const bruto = valores[id]
+    const numero = Number(bruto)
+    if (bruto === '' || bruto === null || !Number.isFinite(numero)) {
+      errores[id] = 'Indica un número (0 si no aplica).'
+    } else if (numero < 0) {
+      errores[id] = 'No puede ser negativo.'
+    }
+  }
+
+  const bloqueTieneErrores = Boolean(
+    bloqueActual?.preguntas.some((pregunta) => errores[pregunta.id]),
+  )
+
+  /** Normaliza los tipos y añade score, fase y dimensiones al payload. */
   const construirRespuestas = () => {
-    const respuestas = PREGUNTAS.reduce((acc, pregunta) => {
-      const opcion = pregunta.opciones.find((o) => o.id === selecciones[pregunta.id])
-      if (opcion) {
-        acc[pregunta.id] = { opcion: opcion.id, valor: opcion.valor, etiqueta: opcion.etiqueta }
-      }
-      return acc
-    }, {})
+    const variables = normalizarVariables(valores)
+    const { score_total, fase_embudo, dimensiones, penalizaciones } = calcularDiagnostico(variables)
 
     return {
-      ...respuestas,
+      ...variables,
+      score_total,
+      fase_embudo,
+      dimensiones,
+      penalizaciones,
       meta: {
         consentimientoDatos,
         terminosAceptados,
@@ -259,6 +441,9 @@ export default function OnboardingWizard({ onComplete }) {
       },
     }
   }
+
+  // El resultado se calcula en vivo para poder mostrarlo en la pantalla final.
+  const resultado = calcularDiagnostico(valores)
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
@@ -288,7 +473,8 @@ export default function OnboardingWizard({ onComplete }) {
               <h2 className="text-xl font-bold text-main">Antes de empezar</h2>
               <p className="max-w-md text-sm leading-relaxed text-muted">
                 Evaluación diagnóstica para calibrar la madurez y viabilidad de tu emprendimiento.
-                Son 6 preguntas breves y no te llevará más de dos minutos.
+                Son 20 preguntas repartidas en 4 bloques; todas parten de un valor orientativo que
+                puedes ajustar.
               </p>
             </div>
 
@@ -310,32 +496,49 @@ export default function OnboardingWizard({ onComplete }) {
           </Card>
         )}
 
-        {/* ── Pasos 1..6: una pregunta por pantalla ──────────────────────── */}
-        {preguntaActual && (
+        {/* ── Pasos 1..4: un bloque de variables por pantalla ────────────── */}
+        {bloqueActual && (
           <Card className="flex flex-col">
-            <BarraProgreso pasoActual={paso} totalPasos={PREGUNTAS.length} />
-
-            <h2 className="text-xl font-bold leading-snug text-main">{preguntaActual.titulo}</h2>
-            <p className="mt-1 text-sm text-muted">{preguntaActual.ayuda}</p>
-
-            <OpcionesPregunta
-              pregunta={preguntaActual}
-              seleccion={seleccionActual}
-              onSeleccionar={(idOpcion) => seleccionar(preguntaActual.id, idOpcion)}
+            <BarraProgreso
+              pasoActual={paso}
+              totalPasos={BLOQUES.length}
+              titulo={bloqueActual.titulo}
             />
+
+            <h2 className="text-xl font-bold leading-snug text-main">{bloqueActual.titulo}</h2>
+            <p className="mt-1 text-sm text-muted">{bloqueActual.descripcion}</p>
+
+            {/* La leyenda de la escala se enuncia una vez por bloque, no bajo cada pregunta. */}
+            {bloqueActual.preguntas.some((pregunta) => !pregunta.tipo) && (
+              <p className="mt-3 inline-flex self-start rounded-full bg-canvas px-3 py-1 text-[11px] font-semibold text-muted">
+                1 = {ETIQUETAS_ESCALA[0]} · 5 = {ETIQUETAS_ESCALA[4]}
+              </p>
+            )}
+
+            <div className="mt-6 space-y-5">
+              {bloqueActual.preguntas.map((pregunta) => (
+                <Pregunta
+                  key={pregunta.id}
+                  pregunta={pregunta}
+                  valor={valores[pregunta.id]}
+                  error={errores[pregunta.id]}
+                  onCambiar={(valor) => cambiarValor(pregunta.id, valor)}
+                />
+              ))}
+            </div>
 
             <div className="mt-8 flex items-center justify-between">
               <BotonAtras onClick={irAtras}>Atrás</BotonAtras>
 
-              <BotonPrimario disabled={!seleccionActual} onClick={irAdelante}>
-                Continuar
+              <BotonPrimario disabled={bloqueTieneErrores} onClick={irAdelante}>
+                {paso === BLOQUES.length ? 'Ver resultado' : 'Continuar'}
                 <ArrowRight className="h-4 w-4" />
               </BotonPrimario>
             </div>
           </Card>
         )}
 
-        {/* ── Pantalla final: validación y acceso al Dashboard ───────────── */}
+        {/* ── Pantalla final: validación, score y acceso al Dashboard ────── */}
         {paso === PASO_FINAL && (
           <Card className="flex flex-col gap-6">
             <div className="flex flex-col items-center gap-3 text-center">
@@ -346,10 +549,12 @@ export default function OnboardingWizard({ onComplete }) {
                 Tus datos han sido validados con éxito por el sistema
               </h2>
               <p className="max-w-md text-sm leading-relaxed text-muted">
-                Hemos calibrado tu panel con las respuestas del diagnóstico. Ya puedes consultar el
-                estado del plan, el punto de equilibrio y los indicadores de viabilidad.
+                Hemos calculado tu score de viabilidad con las 20 variables del diagnóstico. Es una
+                foto de tu punto de partida, no una calificación definitiva.
               </p>
             </div>
+
+            <ResumenScore score={resultado.score_total} fase={resultado.fase_embudo} />
 
             <CasillaLegal
               id="terminos-servicio"

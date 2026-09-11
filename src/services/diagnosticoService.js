@@ -9,8 +9,13 @@
  *
  * Esquema real del proyecto Supabase (verificado contra la instancia):
  *
- *   diagnosticos: id, user_id, respuestas (jsonb)
+ *   diagnosticos: id, user_id, respuestas (jsonb), las 22 columnas de
+ *                 variables del modelo TFM (p1…p20), score_total y fase_embudo
  *   perfiles:     id, email, nombre, plan_activo, creditos_consumidos, created_at
+ *
+ * El JSON se conserva además de las columnas: es el registro íntegro de lo
+ * que respondió el usuario (incluidas dimensiones, penalizaciones y
+ * consentimientos) y sobrevive a cualquier cambio del modelo de columnas.
  *
  * `diagnosticos` no tiene columna para el visitante anónimo, así que el
  * identificador viaja dentro del propio JSON (`respuestas.meta`). Si más
@@ -32,6 +37,7 @@
  * exigir `user_id = auth.uid()`.
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
+import { VARIABLES_DIAGNOSTICO, calcularDiagnostico, normalizarVariables } from '../utils/scoreDiagnostico.js'
 
 const CLAVE_CLIENTE_ANONIMO = 'pyme-launch:cliente-anonimo'
 
@@ -80,6 +86,47 @@ async function usuarioActual() {
   }
 }
 
+/**
+ * Convierte las respuestas del cuestionario en la fila de `diagnosticos`:
+ * el JSON íntegro más las 22 columnas de variables y las dos calculadas
+ * (`score_total`, `fase_embudo`).
+ *
+ * El score se recalcula aquí salvo que venga ya en las respuestas. Así una
+ * llamada programática (una migración, una prueba) obtiene el mismo
+ * resultado que el wizard sin tener que calcularlo por su cuenta.
+ *
+ * Se exporta para poder inspeccionar el contrato de la fila sin escribir
+ * en la base de datos.
+ *
+ * @param {Record<string, unknown>} respuestas
+ * @param {{ id: string } | null} [usuario]
+ * @returns {Record<string, unknown>} Fila lista para insertar.
+ */
+export function construirFila(respuestas, usuario = null) {
+  const variables = normalizarVariables(respuestas)
+  const calculado = calcularDiagnostico(variables)
+
+  const columnas = {}
+  for (const id of VARIABLES_DIAGNOSTICO) columnas[id] = variables[id]
+
+  // Sin columna para el visitante anónimo, el identificador viaja dentro
+  // del propio JSON para no perder la trazabilidad del registro.
+  const json = usuario
+    ? respuestas
+    : {
+        ...respuestas,
+        meta: { ...(respuestas?.meta ?? {}), cliente_anonimo: obtenerClienteAnonimo() },
+      }
+
+  return {
+    ...columnas,
+    respuestas: json,
+    user_id: usuario?.id ?? null,
+    score_total: respuestas?.score_total ?? calculado.score_total,
+    fase_embudo: respuestas?.fase_embudo ?? calculado.fase_embudo,
+  }
+}
+
 /** Encola un diagnóstico que no se pudo persistir. */
 function encolar(respuestas, motivo) {
   pendientes.push({ respuestas, intentadoEn: new Date().toISOString() })
@@ -88,7 +135,9 @@ function encolar(respuestas, motivo) {
 }
 
 /**
- * Guarda el diagnóstico del onboarding en la tabla `diagnosticos`.
+ * Guarda el diagnóstico del onboarding en la tabla `diagnosticos`: el JSON
+ * completo, las 22 variables del modelo en sus columnas y el `score_total`
+ * con su `fase_embudo`.
  *
  * Con sesión activa asocia el `user_id`; sin ella escribe como anónimo con
  * un `cliente_anonimo` estable por navegador (requiere que la política RLS
@@ -103,24 +152,14 @@ export async function guardarDiagnostico(respuestas) {
 
   try {
     const usuario = await usuarioActual()
-
-    // Sin columna dedicada, el visitante anónimo se identifica dentro del
-    // propio JSON para no perder la trazabilidad del registro.
-    const payload = usuario
-      ? respuestas
-      : {
-          ...respuestas,
-          meta: { ...(respuestas?.meta ?? {}), cliente_anonimo: obtenerClienteAnonimo() },
-        }
+    const fila = construirFila(respuestas, usuario)
 
     // Con sesión se pide la fila de vuelta; en modo anónimo NO. Un insert
     // con `.select()` genera un INSERT ... RETURNING, y leer esa fila se
     // evalúa contra la política de SELECT: como el visitante anónimo no
     // puede verla, PostgreSQL devuelve 42501 aunque la escritura sea
     // legítima. Sin retorno, la inserción se completa con 201.
-    const consulta = supabase
-      .from('diagnosticos')
-      .insert({ respuestas: payload, user_id: usuario?.id ?? null })
+    const consulta = supabase.from('diagnosticos').insert(fila)
 
     const { data, error } = usuario ? await consulta.select('id').single() : await consulta
 

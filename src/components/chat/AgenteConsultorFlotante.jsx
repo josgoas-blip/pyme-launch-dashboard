@@ -5,6 +5,7 @@ import { usePlan } from '../../context/PlanContext.jsx'
 import { creditosDelPlan, siguientePlan, PLAN_INFO } from '../../utils/planes.js'
 import { consultarAgente, hayWebhookAgente } from '../../services/agenteService.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
+import { dimensionMasDebil } from '../../utils/scoreDiagnostico.js'
 
 /** Retardo del modo local, para que la respuesta no aparezca de golpe. */
 const RETARDO_RESPUESTA_MS = 900
@@ -23,11 +24,13 @@ const formatoEUR = (n) =>
  * Si faltara alguna respuesta, degrada a una bienvenida genérica.
  */
 function construirBienvenida(respuestas) {
-  const fase = respuestas?.fase_proyecto?.etiqueta
-  const modelo = respuestas?.modelo_negocio?.etiqueta
+  const fase = respuestas?.fase_embudo
+  const score = respuestas?.score_total
+  const debil = dimensionMasDebil(respuestas?.dimensiones)
 
-  if (fase && modelo) {
-    return `Hola, veo que tu proyecto está en fase de ${fase} con un modelo ${modelo}. ¿En qué métrica del panel te ayudo hoy?`
+  if (fase && Number.isFinite(score)) {
+    const palanca = debil ? ` Tu punto más flojo ahora mismo es ${debil.etiqueta.toLowerCase()}.` : ''
+    return `Hola, veo que tu proyecto está en fase de ${fase} con un score de viabilidad de ${score} sobre 100.${palanca} ¿En qué métrica del panel te ayudo hoy?`
   }
   if (fase) {
     return `Hola, veo que tu proyecto está en fase de ${fase}. ¿En qué métrica del panel te ayudo hoy?`
@@ -48,17 +51,30 @@ function responderSimulado(pregunta, { respuestas, datos }) {
   const texto = pregunta.toLowerCase()
   const { puntoMuerto } = datos.viabilidad.metricasProyectadas
   const { fase_actual, proxima_accion } = datos.inicio.controlProyecto
-  const canalPrincipal = datos.estrategia.canalesCaptacion.find((c) => c.esPrincipal)
+  const debil = dimensionMasDebil(respuestas?.dimensiones)
 
-  if (texto.includes('punto muerto') || texto.includes('equilibrio') || texto.includes('rentab')) {
-    return `Tu punto muerto proyectado es de ${formatoEUR(puntoMuerto)}/mes: por debajo de esa facturación tus costes fijos no quedan cubiertos. Se calcula dividiendo los costes fijos que declaraste entre el margen de contribución de tu modelo, así que baja si recortas estructura o si mejoras el margen.`
+  if (texto.includes('score') || texto.includes('puntuación') || texto.includes('diagnóstico')) {
+    return respuestas?.score_total !== undefined
+      ? `Tu score de viabilidad es ${respuestas.score_total} sobre 100, lo que sitúa el proyecto en fase de ${respuestas.fase_embudo}. Se calcula ponderando cuatro dimensiones: validación de mercado (35 %), modelo y competencia (25 %), solvencia financiera y legal (25 %) y operaciones y equipo (15 %).${debil ? ` La que más te penaliza es ${debil.etiqueta.toLowerCase()}, con ${debil.puntuacion} sobre 100.` : ''}`
+      : 'Todavía no hay diagnóstico completado, así que el panel muestra datos de referencia.'
   }
 
-  if (texto.includes('canal') || texto.includes('capta') || texto.includes('cac')) {
-    const nombre = canalPrincipal?.canal ?? respuestas?.canal_captacion?.etiqueta
-    return nombre
-      ? `Tu canal principal declarado es ${nombre}, y aparece el primero en la matriz de captación. Antes de invertir más ahí, contrasta el CAC estimado con una prueba real: en la Fase Semilla esas cifras son referencias del sector, no datos tuyos.`
-      : 'Aún no has declarado un canal principal en el diagnóstico. Puedes reiniciar el cuestionario para añadirlo y personalizar la matriz de captación.'
+  if (texto.includes('punto muerto') || texto.includes('equilibrio') || texto.includes('rentab')) {
+    const meses = respuestas?.p19_meses_breakeven
+    const colchon = respuestas?.p19_meses_colchon
+    const aviso =
+      meses !== undefined && colchon !== undefined && colchon < meses
+        ? ` Ojo: declaraste ${colchon} meses de colchón frente a ${meses} hasta el equilibrio, así que hay una brecha de ${meses - colchon} meses que conviene cubrir.`
+        : ''
+    return `El punto muerto que ves en Viabilidad (${formatoEUR(puntoMuerto)}/mes) es una referencia del modelo: el diagnóstico recoge tu horizonte hasta el equilibrio, no tus costes fijos mensuales, así que esa cifra no está calculada con datos tuyos.${aviso}`
+  }
+
+  if (texto.includes('inversión') || texto.includes('financiación') || texto.includes('colchón')) {
+    const inversion = respuestas?.p18_inversion_total
+    const propios = respuestas?.p18_recursos_propios
+    return inversion !== undefined && propios !== undefined
+      ? `Declaraste una inversión total de ${formatoEUR(inversion)} con ${formatoEUR(propios)} de recursos propios: cubres el ${Math.round((propios / (inversion || 1)) * 100)} % sin financiación externa. Esa cobertura es uno de los cuatro componentes de tu dimensión de solvencia.`
+      : 'No hay cifras de inversión en el diagnóstico. Puedes reiniciar el cuestionario para añadirlas.'
   }
 
   if (texto.includes('estrategia') || texto.includes('came') || texto.includes('prior')) {

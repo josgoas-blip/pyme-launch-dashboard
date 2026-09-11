@@ -1,16 +1,16 @@
 /**
  * Adaptador del diagnóstico → datos del Dashboard.
  *
- * Traduce las respuestas del OnboardingWizard a la forma exacta que ya
- * consumen los cuadrantes (contratos de src/types/). Todo lo que el
- * cuestionario no cubre se toma de los mocks base, que actúan como
- * respaldo: si `respuestas` es `null` o una respuesta concreta falta, el
- * Dashboard sigue mostrando el mock íntegro, nunca huecos.
+ * Traduce el resultado del modelo de evaluación del TFM (20 variables,
+ * `score_total` y `fase_embudo`) a la forma exacta que ya consumen los
+ * cuadrantes. Todo lo que el cuestionario no cubre se toma de los mocks
+ * base, que actúan como respaldo: si `respuestas` es `null` o una variable
+ * falta, el Dashboard sigue mostrando el mock íntegro, nunca huecos.
  *
  * Regla de honestidad del PMV: solo se derivan las cifras que el
- * diagnóstico sustenta de verdad. Autonomía, VAN y TIR siguen viniendo del
- * mock porque ninguna pregunta aporta reserva de caja ni horizonte de
- * inversión.
+ * diagnóstico sustenta de verdad. El punto muerto, el VAN y la TIR siguen
+ * viniendo del mock, porque el cuestionario no recoge ni costes fijos
+ * mensuales ni margen de contribución.
  */
 import { controlProyecto, calidadEvidencia, recorridoProyecto } from '../data/dashboardMock.js'
 import { metricasProyectadas, escenariosVan, supuestosClave } from '../data/viabilidadMock.js'
@@ -33,6 +33,7 @@ import {
   escaleraOfertas,
   accionesSugeridas,
 } from '../data/estrategiaMock.js'
+import { dimensionMasDebil } from './scoreDiagnostico.js'
 
 /** Mocks agrupados por pestaña. Es el respaldo por defecto del adaptador. */
 export const MOCKS_BASE = {
@@ -60,63 +61,30 @@ export const MOCKS_BASE = {
 }
 
 /**
- * Fase declarada → etiqueta, progreso del recorrido y paso "En curso".
+ * Fase del embudo → etiqueta del cuadrante y paso "En curso" del recorrido.
  * `pasoEnCurso` es el índice dentro de `recorridoProyecto`: los anteriores
  * quedan Completados y los posteriores Bloqueados.
  */
-const FASE_PROYECTO = {
-  idea: { etiqueta: 'Definición de la idea', progreso: 12, pasoEnCurso: 0 },
-  validacion: { etiqueta: 'Validación del problema', progreso: 31, pasoEnCurso: 2 },
-  traccion: { etiqueta: 'Tracción inicial', progreso: 58, pasoEnCurso: 3 },
-  consolidacion: { etiqueta: 'Consolidación y escalado', progreso: 82, pasoEnCurso: 4 },
-}
-
-/** Reto prioritario declarado → próxima acción recomendada (tarjeta de Inicio). */
-const PROXIMA_ACCION_POR_RETO = {
-  captar_clientes: 'Registrar 5 entrevistas de venta',
-  rentabilidad: 'Recalcular el punto muerto con costes reales',
-  procesos_equipo: 'Documentar los 3 procesos críticos',
-  financiacion: 'Preparar el plan de tesorería a 6 meses',
-}
-
-/** Punto medio representativo de cada tramo declarado (€/mes). */
-const COSTES_FIJOS_EUR = {
-  menos_1k: 600,
-  de_1k_a_3k: 2000,
-  de_3k_a_10k: 6500,
-  mas_de_10k: 14000,
-}
-
-const FACTURACION_EUR = {
-  sin_ingresos: 0,
-  hasta_3k: 1500,
-  de_3k_a_15k: 9000,
-  mas_de_15k: 22000,
+const FASE_EMBUDO = {
+  Idea: { etiqueta: 'Definición de la idea', pasoEnCurso: 0 },
+  Validación: { etiqueta: 'Validación del problema', pasoEnCurso: 2 },
+  Tracción: { etiqueta: 'Tracción inicial', pasoEnCurso: 3 },
+  Consolidación: { etiqueta: 'Consolidación y escalado', pasoEnCurso: 4 },
 }
 
 /**
- * Modelo de negocio → etiqueta y margen de contribución típico del modelo.
- * El margen es el divisor del punto muerto: cuánto de cada euro facturado
- * queda para cubrir la estructura fija.
+ * Dimensión más floja del diagnóstico → próxima acción recomendada.
+ * La palanca de mejora es aquello que más lastra el score, no una lista
+ * genérica de buenas prácticas.
  */
-const MODELO_NEGOCIO = {
-  b2b_servicios: { etiqueta: 'B2B Servicios', margenContribucion: 0.55 },
-  saas_digital: { etiqueta: 'SaaS / Digital', margenContribucion: 0.75 },
-  comercio_b2c: { etiqueta: 'Comercio / B2C', margenContribucion: 0.35 },
-  otro: { etiqueta: 'Otro', margenContribucion: 0.5 },
+const PROXIMA_ACCION_POR_DIMENSION = {
+  validacion_mercado: 'Registrar 5 entrevistas con clientes',
+  modelo_competencia: 'Justificar tu precio con costes y mercado',
+  operaciones_equipo: 'Definir tus necesidades operativas',
+  solvencia_financiera: 'Preparar el plan de tesorería a 6 meses',
 }
 
-/**
- * Canal declarado → etiqueta y fila equivalente de la matriz de canales.
- * La economía (inversión, CAC, LTV/CAC, ROAS) sigue siendo la del mock:
- * el cuestionario identifica el canal, no su rendimiento real.
- */
-const CANAL_CAPTACION = {
-  meta_ads: { etiqueta: 'Meta Ads', filaBase: 'meta-ads' },
-  seo_contenido: { etiqueta: 'SEO / Contenido', filaBase: 'seo-local' },
-  contacto_directo: { etiqueta: 'Contacto directo', filaBase: 'email' },
-  redes_organicas: { etiqueta: 'Redes sociales', filaBase: 'seo-local' },
-}
+const DIAS_POR_MES = 30
 
 const formatoEUR = (n) =>
   new Intl.NumberFormat('es-ES', {
@@ -125,28 +93,28 @@ const formatoEUR = (n) =>
     maximumFractionDigits: 0,
   }).format(n)
 
-/** Lee el `valor` de una respuesta del wizard, tolerando ausencias. */
-function valorDe(respuestas, idPregunta) {
-  return respuestas?.[idPregunta]?.valor
-}
-
-/** Busca en una tabla de mapeo, devolviendo `undefined` si no hay respuesta válida. */
-function mapear(tabla, clave) {
-  return clave === undefined ? undefined : tabla[clave]
+/** Lee una variable del diagnóstico solo si es un número utilizable. */
+function numeroDe(respuestas, clave) {
+  const valor = respuestas?.[clave]
+  return Number.isFinite(valor) ? valor : undefined
 }
 
 /**
- * Inicio: fase actual, progreso y estado del recorrido (fase_proyecto) +
- * próxima acción recomendada (reto_prioritario).
+ * Inicio: fase y progreso del recorrido a partir de `fase_embudo` y
+ * `score_total`; próxima acción a partir de la dimensión más débil.
  */
 function adaptarInicio(respuestas, base) {
-  const fase = mapear(FASE_PROYECTO, valorDe(respuestas, 'fase_proyecto'))
-  const proximaAccion = mapear(PROXIMA_ACCION_POR_RETO, valorDe(respuestas, 'reto_prioritario'))
+  const fase = FASE_EMBUDO[respuestas?.fase_embudo]
+  const score = numeroDe(respuestas, 'score_total')
+  const debil = dimensionMasDebil(respuestas?.dimensiones)
+  const proximaAccion = debil ? PROXIMA_ACCION_POR_DIMENSION[debil.id] : undefined
 
   return {
     ...base,
     controlProyecto: {
-      progreso_recorrido: fase?.progreso ?? base.controlProyecto.progreso_recorrido,
+      // El score del modelo ES el avance del recorrido: una sola cifra,
+      // sin un segundo indicador de progreso que pueda contradecirla.
+      progreso_recorrido: score ?? base.controlProyecto.progreso_recorrido,
       fase_actual: fase?.etiqueta ?? base.controlProyecto.fase_actual,
       proxima_accion: proximaAccion ?? base.controlProyecto.proxima_accion,
     },
@@ -165,111 +133,70 @@ function adaptarInicio(respuestas, base) {
 }
 
 /**
- * Viabilidad: punto muerto calculado (costes fijos ÷ margen de contribución
- * del modelo) y supuestos clave sustituidos por lo que el cliente ha
- * declarado. Autonomía, VAN y TIR permanecen como respaldo del mock.
- */
-function adaptarViabilidad(respuestas, base) {
-  const costesFijos = mapear(COSTES_FIJOS_EUR, valorDe(respuestas, 'costes_fijos'))
-  const facturacion = mapear(FACTURACION_EUR, valorDe(respuestas, 'facturacion_mensual'))
-  const modelo = mapear(MODELO_NEGOCIO, valorDe(respuestas, 'modelo_negocio'))
-
-  if (costesFijos === undefined && facturacion === undefined) return base
-
-  const margen = modelo?.margenContribucion ?? MODELO_NEGOCIO.otro.margenContribucion
-
-  // Umbral de rentabilidad: facturación mínima que cubre la estructura fija.
-  const puntoMuerto =
-    costesFijos === undefined
-      ? base.metricasProyectadas.puntoMuerto
-      : Math.round(costesFijos / margen / 100) * 100
-
-  // Etiquetas breves: el panel de Supuestos Clave las trunca a una línea.
-  const supuestosDeclarados = []
-  if (costesFijos !== undefined) {
-    supuestosDeclarados.push({
-      id: 'costes-fijos',
-      etiqueta: 'Costes fijos / mes',
-      valor: { valor: formatoEUR(costesFijos), tipo_evidencia: 'Dato declarado' },
-    })
-  }
-  if (facturacion !== undefined) {
-    supuestosDeclarados.push({
-      id: 'facturacion-actual',
-      etiqueta: 'Facturación / mes',
-      valor: {
-        valor: facturacion === 0 ? 'Sin ingresos' : formatoEUR(facturacion),
-        tipo_evidencia: 'Dato declarado',
-      },
-    })
-  }
-  if (modelo) {
-    supuestosDeclarados.push({
-      id: 'margen-contribucion',
-      etiqueta: 'Margen de contrib.',
-      valor: { valor: `${Math.round(margen * 100)} %`, tipo_evidencia: 'Estimación' },
-    })
-  }
-
-  return {
-    ...base,
-    metricasProyectadas: { ...base.metricasProyectadas, puntoMuerto },
-    // Los supuestos declarados desplazan a las hipótesis del mock; se
-    // conserva el crecimiento anual, que sigue siendo un escenario.
-    supuestosClave: [
-      ...supuestosDeclarados,
-      ...base.supuestosClave.filter((s) => s.id === 'crecimiento-anual'),
-    ],
-  }
-}
-
-/**
- * Análisis: las etiquetas de mercado se contextualizan con el modelo de
- * negocio y el canal principal declarados. Las cifras no se tocan.
+ * Análisis: el Doble Indicador pasa a reflejar el diagnóstico real —
+ * madurez global (score) y solidez de la evidencia (dimensión de
+ * validación de mercado, que es justo lo que mide el contraste con
+ * clientes).
  */
 function adaptarAnalisis(respuestas, base) {
-  const modelo = mapear(MODELO_NEGOCIO, valorDe(respuestas, 'modelo_negocio'))
-  const canal = mapear(CANAL_CAPTACION, valorDe(respuestas, 'canal_captacion'))
+  const score = numeroDe(respuestas, 'score_total')
+  const validacion = respuestas?.dimensiones?.validacion_mercado
 
-  if (!modelo && !canal) return base
+  if (score === undefined && validacion === undefined) return base
 
   return {
     ...base,
-    metricasMercado: base.metricasMercado.map((metrica) => {
-      if (metrica.id === 'ltv' && canal) {
-        return { ...metrica, descripcion: `${metrica.descripcion} · captación por ${canal.etiqueta}` }
-      }
-      if (modelo && metrica.id !== 'ltv') {
-        return { ...metrica, descripcion: `${metrica.descripcion} · ${modelo.etiqueta}` }
-      }
-      return metrica
-    }),
+    indiceMadurez: score ?? base.indiceMadurez,
+    indiceSolidezEvidencia: Number.isFinite(validacion) ? validacion : base.indiceSolidezEvidencia,
   }
 }
 
 /**
- * Estrategia: el canal declarado encabeza la matriz de captación marcado
- * como principal, y da nombre a la etapa de atracción del funnel.
+ * Viabilidad: la autonomía sale del colchón declarado y los supuestos
+ * clave se sustituyen por las cifras que el usuario ha aportado.
  */
-function adaptarEstrategia(respuestas, base) {
-  const canal = mapear(CANAL_CAPTACION, valorDe(respuestas, 'canal_captacion'))
-  if (!canal) return base
+function adaptarViabilidad(respuestas, base) {
+  const inversion = numeroDe(respuestas, 'p18_inversion_total')
+  const propios = numeroDe(respuestas, 'p18_recursos_propios')
+  const colchon = numeroDe(respuestas, 'p19_meses_colchon')
+  const breakeven = numeroDe(respuestas, 'p19_meses_breakeven')
 
-  const filaPrincipal = base.canalesCaptacion.find((c) => c.id === canal.filaBase)
+  if (inversion === undefined && colchon === undefined) return base
+
+  const supuestosDeclarados = []
+  if (inversion !== undefined) {
+    supuestosDeclarados.push({
+      id: 'inversion-total',
+      etiqueta: 'Inversión total',
+      valor: { valor: formatoEUR(inversion), tipo_evidencia: 'Dato declarado' },
+    })
+  }
+  if (propios !== undefined) {
+    supuestosDeclarados.push({
+      id: 'recursos-propios',
+      etiqueta: 'Recursos propios',
+      valor: { valor: formatoEUR(propios), tipo_evidencia: 'Dato declarado' },
+    })
+  }
+  if (breakeven !== undefined) {
+    supuestosDeclarados.push({
+      id: 'meses-breakeven',
+      etiqueta: 'Meses a equilibrio',
+      valor: { valor: `${breakeven} meses`, tipo_evidencia: 'Estimación' },
+    })
+  }
 
   return {
     ...base,
-    canalesCaptacion: filaPrincipal
-      ? [
-          { ...filaPrincipal, canal: canal.etiqueta, esPrincipal: true },
-          ...base.canalesCaptacion.filter((c) => c.id !== canal.filaBase),
-        ]
-      : base.canalesCaptacion,
-    funnelConversion: base.funnelConversion.map((etapa) =>
-      etapa.id === 'atraccion'
-        ? { ...etapa, etiqueta: `Visitas y Leads · ${canal.etiqueta}` }
-        : etapa,
-    ),
+    metricasProyectadas: {
+      ...base.metricasProyectadas,
+      autonomia: colchon !== undefined ? colchon * DIAS_POR_MES : base.metricasProyectadas.autonomia,
+    },
+    // Los supuestos declarados desplazan a las hipótesis del mock; se
+    // conserva el crecimiento anual, que sigue siendo un escenario.
+    supuestosClave: supuestosDeclarados.length
+      ? [...supuestosDeclarados, ...base.supuestosClave.filter((s) => s.id === 'crecimiento-anual')]
+      : base.supuestosClave,
   }
 }
 
@@ -277,8 +204,11 @@ function adaptarEstrategia(respuestas, base) {
  * Función principal: construye los datos de las 4 pestañas de contenido a
  * partir del diagnóstico, usando los mocks como respaldo.
  *
- * @param {Record<string, { opcion: string, valor: string, etiqueta: string }> | null} respuestas
- *   Respuestas del OnboardingWizard (`null` mientras no se complete).
+ * Estrategia no se adapta: el modelo del TFM no recoge canal de captación
+ * ni modelo de ingresos con el detalle que necesita esa pestaña, así que
+ * sus cuadrantes siguen mostrando los datos de referencia del mock.
+ *
+ * @param {Record<string, unknown> | null} respuestas - Salida del OnboardingWizard.
  * @param {typeof MOCKS_BASE} [mocksBase] - Respaldo inyectable (útil para pruebas).
  * @returns {typeof MOCKS_BASE} Datos listos para los cuadrantes.
  */
@@ -288,7 +218,7 @@ export function adaptarDiagnostico(respuestas, mocksBase = MOCKS_BASE) {
   return {
     inicio: adaptarInicio(respuestas, mocksBase.inicio),
     analisis: adaptarAnalisis(respuestas, mocksBase.analisis),
-    estrategia: adaptarEstrategia(respuestas, mocksBase.estrategia),
+    estrategia: mocksBase.estrategia,
     viabilidad: adaptarViabilidad(respuestas, mocksBase.viabilidad),
   }
 }
