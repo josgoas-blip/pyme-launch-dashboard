@@ -55,13 +55,26 @@
  */
 
 /**
- * Una Acción Sugerida del bloque "Acciones Sugeridas" (PMV Fase Semilla):
- * recomendación de prevalidación, no instrucción ni tarea operativa.
+ * Una acción del Plan de Acción (PMV Fase Semilla): recomendación de
+ * prevalidación, no instrucción ni tarea operativa. Ya no vive en el mock:
+ * la deriva `src/utils/planAccionDiagnostico.js` a partir de las respuestas
+ * del diagnóstico.
  * @typedef {Object} AccionSugerida
- * @property {number} id
+ * @property {string} id
  * @property {string} titulo
  * @property {'Alta'|'Media'|'Baja'} prioridad
- * @property {string} justificacion - Evidencia que motiva la recomendación.
+ * @property {string} justificacion - Respuesta o cifra declarada que la motiva.
+ * @property {string} origen - Pestaña donde se ve esa evidencia.
+ */
+
+/**
+ * Un tramo temporal del Plan de Acción.
+ * @typedef {Object} HorizontePlan
+ * @property {string} id - 'inmediato' | 'corto' | 'consolidacion'.
+ * @property {string} etiqueta - p.ej. "Primeros 30 días".
+ * @property {string} rango - p.ej. "0-30 días".
+ * @property {string} foco - Objetivo del tramo según la fase del embudo.
+ * @property {AccionSugerida[]} acciones
  */
 
 export {}

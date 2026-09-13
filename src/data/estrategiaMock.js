@@ -82,37 +82,10 @@ export const escaleraOfertas = [
   },
 ]
 
-/**
- * 6. Acciones Sugeridas: recomendaciones de prevalidación para la Fase
- * Semilla (no instrucciones). El emprendedor conserva la decisión final.
- * @type {import('../types/estrategia.js').AccionSugerida[]}
- */
-export const accionesSugeridas = [
-  {
-    id: 1,
-    titulo: 'Realizar 5 entrevistas adicionales',
-    prioridad: 'Alta',
-    justificacion: 'Evidencia comercial insuficiente para el problema.',
-  },
-  {
-    id: 2,
-    titulo: 'Contrastar precio con 3 clientes potenciales',
-    prioridad: 'Alta',
-    justificacion: 'Pricing basado en hipótesis, sin validar disposición a pagar.',
-  },
-  {
-    id: 3,
-    titulo: 'Revisar canal de captación principal',
-    prioridad: 'Media',
-    justificacion: 'CAC objetivo estimado sin pruebas en mercado real.',
-  },
-]
-
 export default {
   iniciativasCame,
   mitigacionRiesgos,
   canalesCaptacion,
   funnelConversion,
   escaleraOfertas,
-  accionesSugeridas,
 }

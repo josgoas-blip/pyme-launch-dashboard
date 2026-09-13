@@ -31,7 +31,6 @@ import {
   canalesCaptacion,
   funnelConversion,
   escaleraOfertas,
-  accionesSugeridas,
 } from '../data/estrategiaMock.js'
 import { dimensionMasDebil } from './scoreDiagnostico.js'
 
@@ -55,7 +54,6 @@ export const MOCKS_BASE = {
     canalesCaptacion,
     funnelConversion,
     escaleraOfertas,
-    accionesSugeridas,
   },
 }
 
@@ -145,10 +143,10 @@ function adaptarAnalisis(respuestas, base) {
  * Función principal: construye los datos de las 4 pestañas de contenido a
  * partir del diagnóstico, usando los mocks como respaldo.
  *
- * Estrategia no se adapta aquí: sus dos cuadrantes conectados al
- * diagnóstico (Adquisición y Monetización) se derivan en
- * `estrategiaDiagnostico.js`, y el resto sigue mostrando datos de
- * referencia del mock.
+ * Estrategia no se adapta aquí: sus cuadrantes conectados al diagnóstico se
+ * derivan en `estrategiaDiagnostico.js` (Adquisición y Monetización) y en
+ * `planAccionDiagnostico.js` (Plan de Acción), y el resto sigue mostrando
+ * datos de referencia del mock.
  *
  * Viabilidad tampoco pasa por aquí: se deriva íntegramente del bloque
  * financiero del cuestionario en `viabilidadDiagnostico.js`, sin mock de

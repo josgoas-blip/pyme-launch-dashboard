@@ -10,6 +10,7 @@ import PaywallCard from './PaywallCard.jsx'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { tieneAcceso } from '../../utils/planes.js'
 import { derivarAdquisicion, derivarMonetizacion } from '../../utils/estrategiaDiagnostico.js'
+import { derivarPlanAccion } from '../../utils/planAccionDiagnostico.js'
 
 /**
  * Ensambla la pestaña "Estrategia" — "¿Qué debería trabajar ahora?": 3
@@ -23,18 +24,17 @@ import { derivarAdquisicion, derivarMonetizacion } from '../../utils/estrategiaD
 export default function EstrategiaView() {
   const { plan } = usePlan()
   const { datos, respuestas } = useOnboarding()
-  const {
-    iniciativasCame,
-    mitigacionRiesgos,
-    funnelConversion,
-    accionesSugeridas,
-  } = datos.estrategia
+  const { iniciativasCame, mitigacionRiesgos, funnelConversion } = datos.estrategia
 
   // Bloques conectados al diagnóstico real (p12 y p10). Devuelven `null`
   // cuando no hay diagnóstico cargado; los componentes muestran entonces un
   // placeholder en lugar de datos ficticios.
   const adquisicion = derivarAdquisicion(respuestas)
   const monetizacion = derivarMonetizacion(respuestas)
+
+  // Plan de Acción: horizontes y tareas derivados de las penalizaciones del
+  // modelo, de las respuestas más bajas y de la fase del embudo.
+  const planAccion = derivarPlanAccion(respuestas)
 
   if (!tieneAcceso(plan, 'assist')) {
     return (
@@ -84,11 +84,11 @@ export default function EstrategiaView() {
       <section className="space-y-4 border-t border-card-border pt-8">
         <BloqueHeader
           numero={3}
-          titulo="Monetización y Acciones Sugeridas"
-          subtitulo="Escalera de ofertas y recomendaciones de prevalidación"
+          titulo="Monetización y Plan de Acción"
+          subtitulo="Escalera de ofertas y plan escalonado a 6 meses según tu diagnóstico"
         />
         <EscaleraOfertasPricing monetizacion={monetizacion} />
-        <PlanAccionCameDetail accionesSugeridas={accionesSugeridas} />
+        <PlanAccionCameDetail plan={planAccion} />
       </section>
     </div>
   )
