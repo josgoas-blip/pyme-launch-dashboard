@@ -1,4 +1,4 @@
-import { perfilCliente, preferenciasContacto, suscripcion, integraciones } from '../../data/configuracionMock.js'
+import { perfilCliente, preferenciasContacto, suscripcion } from '../../data/configuracionMock.js'
 import BloqueHeader from './BloqueHeader.jsx'
 import PerfilClienteCard from './PerfilClienteCard.jsx'
 import PreferenciasContactoCard from './PreferenciasContactoCard.jsx'
@@ -10,7 +10,7 @@ import ConsolaExportacionCard from './ConsolaExportacionCard.jsx'
  * Ensambla la pestaña "Configuración" en 4 bloques de lectura progresiva:
  * (1) Perfil del Emprendedor & Ficha Identificativa, (2) Preferencias de
  * Acompañamiento & Canales, (3) Estado del Plan & Conexiones Técnicas,
- * (4) Consola de Exportación & Seguridad.
+ * (4) Consola de Exportación.
  */
 export default function ConfiguracionView() {
   return (
@@ -40,20 +40,20 @@ export default function ConfiguracionView() {
         <BloqueHeader
           numero={3}
           titulo="Estado del Plan & Conexiones Técnicas"
-          subtitulo="Suscripción activa e integraciones del backend"
+          subtitulo="Suscripción activa y estado de configuración del backend"
         />
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <SuscripcionCard suscripcion={suscripcion} />
-          <IntegracionesList integraciones={integraciones} />
+          <IntegracionesList />
         </div>
       </section>
 
-      {/* BLOQUE 4: Consola de Exportación & Seguridad */}
+      {/* BLOQUE 4: Consola de Exportación */}
       <section className="space-y-4 border-t border-card-border pt-8">
         <BloqueHeader
           numero={4}
-          titulo="Consola de Exportación & Seguridad"
-          subtitulo="Informes, modelo económico y gestión de la sesión"
+          titulo="Consola de Exportación"
+          subtitulo="Informe ejecutivo en PDF y modelo económico en CSV"
         />
         <ConsolaExportacionCard />
       </section>

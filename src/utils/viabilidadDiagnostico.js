@@ -202,6 +202,81 @@ function saldoEnMes(inversion, consumo, mesEquilibrio, mes) {
 }
 
 /**
+ * Parámetros del modelo de caja, comunes al gráfico de la pestaña y a la
+ * exportación a CSV: caja inicial, consumo mensual implícito y el mes de
+ * equilibrio de cada escenario. Se extrae aquí para que las dos salidas no
+ * puedan divergir.
+ *
+ * @param {Record<string, unknown> | null} respuestas
+ * @returns {{ inversion: number, colchon: number, breakeven: number,
+ *   consumoMensual: number, equilibrios: { favorable: number, base: number, adverso: number }
+ * } | null} `null` si faltan la inversión o los plazos.
+ */
+function modeloCaja(respuestas) {
+  const inversion = cantidadDe(respuestas, 'p18_inversion_total')
+  const colchon = cantidadDe(respuestas, 'p19_meses_colchon')
+  const breakeven = cantidadDe(respuestas, 'p19_meses_breakeven')
+
+  // Sin caja declarada o sin horizonte no hay trayectoria que proyectar.
+  if (!inversion || !colchon || breakeven === undefined) return null
+
+  return {
+    inversion,
+    colchon,
+    breakeven,
+    consumoMensual: inversion / colchon,
+    // Con `breakeven` a 0 los tres escenarios quedan a 0: el proyecto ya
+    // estaría en equilibrio y la caja no llega a consumirse.
+    equilibrios: {
+      favorable: Math.round(breakeven * FACTORES_ESCENARIO.favorable),
+      base: Math.round(breakeven * FACTORES_ESCENARIO.base),
+      adverso: Math.round(breakeven * FACTORES_ESCENARIO.adverso),
+    },
+  }
+}
+
+/**
+ * Serie mes a mes del saldo de caja, sin muestrear.
+ *
+ * El gráfico de la pestaña reduce los puntos para que la línea siga siendo
+ * legible; una hoja de cálculo, en cambio, quiere todos los meses. Ambas
+ * salidas comparten `modeloCaja`, así que describen la misma proyección.
+ *
+ * @param {Record<string, unknown> | null} respuestas - Diagnóstico actual.
+ * @param {number} [mesesHorizonte] - Último mes de la serie (por defecto 12).
+ * @returns {{
+ *   filas: { mes: number, favorable: number, base: number, adverso: number }[],
+ *   consumoMensual: number,
+ *   cajaInicial: number,
+ *   equilibrios: { favorable: number, base: number, adverso: number },
+ * } | null} `null` si faltan la inversión o los plazos.
+ */
+export function derivarProyeccionMensual(respuestas, mesesHorizonte = 12) {
+  const modelo = modeloCaja(respuestas)
+  if (!modelo) return null
+
+  const { inversion, consumoMensual, equilibrios } = modelo
+  const ultimoMes = Math.max(1, Math.round(mesesHorizonte))
+
+  const filas = []
+  for (let mes = 0; mes <= ultimoMes; mes += 1) {
+    filas.push({
+      mes,
+      favorable: saldoEnMes(inversion, consumoMensual, equilibrios.favorable, mes),
+      base: saldoEnMes(inversion, consumoMensual, equilibrios.base, mes),
+      adverso: saldoEnMes(inversion, consumoMensual, equilibrios.adverso, mes),
+    })
+  }
+
+  return {
+    filas,
+    consumoMensual: Math.round(consumoMensual),
+    cajaInicial: inversion,
+    equilibrios,
+  }
+}
+
+/**
  * Proyección del saldo de caja bajo tres escenarios, construida únicamente
  * con la inversión y los plazos declarados:
  *   - Caja inicial = inversión total declarada.
@@ -220,21 +295,10 @@ function saldoEnMes(inversion, consumo, mesEquilibrio, mes) {
  * } | null} `null` si faltan la inversión o los plazos.
  */
 export function derivarEscenariosCaja(respuestas) {
-  const inversion = cantidadDe(respuestas, 'p18_inversion_total')
-  const colchon = cantidadDe(respuestas, 'p19_meses_colchon')
-  const breakeven = cantidadDe(respuestas, 'p19_meses_breakeven')
+  const modelo = modeloCaja(respuestas)
+  if (!modelo) return null
 
-  // Sin caja declarada o sin horizonte no hay trayectoria que proyectar.
-  if (!inversion || !colchon || breakeven === undefined) return null
-
-  const consumoMensual = inversion / colchon
-  // Con `breakeven` a 0 los tres escenarios quedan a 0: el proyecto ya
-  // estaría en equilibrio y la caja no llega a consumirse.
-  const equilibrios = {
-    favorable: Math.round(breakeven * FACTORES_ESCENARIO.favorable),
-    base: Math.round(breakeven * FACTORES_ESCENARIO.base),
-    adverso: Math.round(breakeven * FACTORES_ESCENARIO.adverso),
-  }
+  const { inversion, colchon, consumoMensual, equilibrios } = modelo
 
   // Horizonte: un par de meses más allá del peor escenario, sin bajar del
   // colchón declarado, para que la autonomía siempre quede visible.

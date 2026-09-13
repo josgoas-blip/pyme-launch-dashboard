@@ -44,13 +44,9 @@
  */
 
 /**
- * Una integración activa/inactiva del sistema.
- * @typedef {Object} Integracion
- * @property {string} id
- * @property {string} nombre
- * @property {string} descripcion
- * @property {'Conectado'|'Desconectado'} estado
- * @property {boolean} [webhookTesteable] - Si expone un botón "Testear Webhook".
+ * El estado de las integraciones ya no se tipa aquí: lo deriva
+ * `IntegracionesList.jsx` de las señales reales de configuración
+ * (`haySupabase` y `hayWebhookAgente`), no de un dato estático.
  */
 
 export {}

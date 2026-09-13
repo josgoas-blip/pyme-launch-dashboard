@@ -41,30 +41,4 @@ export const suscripcion = {
   precioMensual: 490,
 }
 
-/**
- * 3b. Integraciones activas.
- * @type {import('../types/configuracion.js').Integracion[]}
- */
-export const integraciones = [
-  {
-    id: 'n8n',
-    nombre: 'n8n',
-    descripcion: 'Orquestador de automatizaciones (Webhooks + LLM)',
-    estado: 'Conectado',
-    webhookTesteable: true,
-  },
-  {
-    id: 'supabase',
-    nombre: 'Supabase',
-    descripcion: 'Backend y base de datos (PostgreSQL + RLS)',
-    estado: 'Conectado',
-  },
-  {
-    id: 'stripe',
-    nombre: 'Stripe',
-    descripcion: 'Pasarela de pagos y facturación',
-    estado: 'Desconectado',
-  },
-]
-
-export default { perfilCliente, preferenciasContacto, suscripcion, integraciones }
+export default { perfilCliente, preferenciasContacto, suscripcion }

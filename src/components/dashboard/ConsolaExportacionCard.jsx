@@ -1,35 +1,39 @@
 import { useState } from 'react'
-import { FileText, FileSpreadsheet, KeyRound } from 'lucide-react'
+import { FileText, FileSpreadsheet } from 'lucide-react'
 import { Card, CardTitle } from '../ui/Card.jsx'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { derivarResumenGlobal } from '../../utils/resumenDiagnostico.js'
+import {
+  construirCsvModeloEconomico,
+  descargarCsv,
+  MESES_PROYECCION,
+  NOMBRE_FICHERO_CSV,
+} from '../../utils/exportarCsv.js'
 
 /**
- * Cuadrante "Consola de Exportación & Seguridad".
+ * Cuadrante "Consola de Exportación".
  *
- * El Informe Ejecutivo sí se genera de verdad: abre el diálogo de
- * impresión del navegador sobre `InformeEjecutivo`, que se monta oculto en
- * App.jsx. Se eligió la impresión nativa en vez de una librería de captura
- * (html2pdf / html2canvas + jsPDF) por tres motivos: el PDF sale con texto
- * vectorial —seleccionable y buscable, no una imagen—, la fidelidad de
- * estilos es exacta porque lo compone el propio motor del navegador, y no
- * añade ~600 kB a un bundle que ya supera el umbral de aviso de Vite.
+ * Las dos exportaciones son reales:
+ *   - Informe Ejecutivo en PDF: abre el diálogo de impresión sobre
+ *     `InformeEjecutivo`, que se monta oculto en App.jsx. Se eligió la
+ *     impresión nativa frente a una librería de captura para que el PDF
+ *     lleve texto vectorial y no sume ~600 kB al bundle.
+ *   - Modelo económico en CSV: se construye en el cliente con las
+ *     variables financieras declaradas y la proyección de caja, y se
+ *     descarga como Blob. Sin dependencias.
  *
- * La exportación a Excel sigue siendo una simulación, y se etiqueta como
- * tal para no prometer un fichero que todavía no existe.
+ * Se ha retirado el botón "Cambiar Contraseña / Gestionar Sesión": la
+ * aplicación opera de forma anónima y no tiene flujo de autenticación, así
+ * que ofrecer gestión de sesión prometía algo que no existe.
  */
 export default function ConsolaExportacionCard() {
   const { respuestas } = useOnboarding()
-  const [estado, setEstado] = useState(null) // 'excel' | 'auth' | null
+  const [avisoCsv, setAvisoCsv] = useState(null)
 
-  // Sin diagnóstico no hay informe: el botón queda deshabilitado en lugar
-  // de abrir un diálogo de impresión con una hoja en blanco.
+  // Sin diagnóstico no hay nada que exportar: los botones quedan
+  // deshabilitados en lugar de generar ficheros vacíos.
   const hayDiagnostico = derivarResumenGlobal(respuestas) !== null
-
-  const simular = (clave) => {
-    setEstado(clave)
-    setTimeout(() => setEstado(null), 1800)
-  }
+  const csv = hayDiagnostico ? construirCsvModeloEconomico(respuestas) : null
 
   /**
    * Abre el diálogo de impresión. Las reglas `@media print` de index.css
@@ -41,9 +45,22 @@ export default function ConsolaExportacionCard() {
     window.print()
   }
 
+  /** Genera y descarga el CSV del modelo económico. */
+  const descargarModelo = () => {
+    if (!csv) return
+
+    const ok = descargarCsv(NOMBRE_FICHERO_CSV, csv)
+    setAvisoCsv(
+      ok
+        ? `Descargado ${NOMBRE_FICHERO_CSV}`
+        : 'No se pudo generar el fichero en este navegador.',
+    )
+    setTimeout(() => setAvisoCsv(null), 4000)
+  }
+
   return (
     <Card>
-      <CardTitle>Consola de Exportación &amp; Seguridad</CardTitle>
+      <CardTitle>Consola de Exportación</CardTitle>
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <button
@@ -63,22 +80,32 @@ export default function ConsolaExportacionCard() {
           <div className="min-w-0">
             <p className="text-sm font-bold text-[#1F2937]">Descargar Informe Ejecutivo</p>
             <p className="text-xs text-[#4B5563]">
-              {hayDiagnostico ? 'PDF · guardar desde el diálogo de impresión' : 'Requiere diagnóstico completado'}
+              {hayDiagnostico
+                ? 'PDF · guardar desde el diálogo de impresión'
+                : 'Requiere diagnóstico completado'}
             </p>
           </div>
         </button>
 
         <button
           type="button"
-          onClick={() => simular('excel')}
-          className="flex items-center gap-3 rounded-lg border border-card-border bg-canvas p-4 text-left transition-colors hover:bg-accent-green/5"
+          onClick={descargarModelo}
+          disabled={!csv}
+          title={
+            csv
+              ? `Descarga ${NOMBRE_FICHERO_CSV}`
+              : 'Declara tu inversión y tus plazos en el diagnóstico para exportar el modelo'
+          }
+          className="flex items-center gap-3 rounded-lg border border-card-border bg-canvas p-4 text-left transition-colors hover:bg-accent-green/5 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-canvas"
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-green/10 text-accent-green">
             <FileSpreadsheet className="h-5 w-5" />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-bold text-[#1F2937]">Exportar Modelo Económico</p>
-            <p className="text-xs text-[#4B5563]">Excel · pendiente de implementar</p>
+            <p className="text-xs text-[#4B5563]">
+              {csv ? 'CSV · abre en Excel o Google Sheets' : 'Requiere variables financieras'}
+            </p>
           </div>
         </button>
       </div>
@@ -86,34 +113,13 @@ export default function ConsolaExportacionCard() {
       {hayDiagnostico && (
         <p className="mt-3 text-xs leading-snug text-[#4B5563]">
           El informe recoge tu score y fase, las cuatro dimensiones, el margen de tesorería y las
-          acciones críticas de los primeros 30 días. En el diálogo que se abre, selecciona
-          <span className="font-semibold text-[#1F2937]"> Guardar como PDF</span> en el destino.
+          acciones críticas de los primeros 30 días. El CSV añade tus variables financieras
+          declaradas y la proyección de saldo de caja del mes 0 al {MESES_PROYECCION} en los tres
+          escenarios.
         </p>
       )}
 
-      {estado === 'excel' && (
-        <p className="mt-3 text-xs font-medium text-accent-amber">
-          La exportación del modelo económico a Excel aún no está implementada.
-        </p>
-      )}
-
-      {/* Seguridad */}
-      <div className="mt-5 border-t border-card-border pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#4B5563]">Seguridad</p>
-        <button
-          type="button"
-          onClick={() => simular('auth')}
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-card-border bg-canvas px-4 py-2.5 text-sm font-semibold text-[#1F2937] transition-colors hover:bg-gray-200 sm:w-auto"
-        >
-          <KeyRound className="h-4 w-4" />
-          Cambiar Contraseña / Gestionar Sesión (Supabase Auth)
-        </button>
-        {estado === 'auth' && (
-          <p className="mt-2 text-xs font-medium text-[#4B5563]">
-            La gestión de sesión se habilitará al conectar Supabase Auth (Fase 5).
-          </p>
-        )}
-      </div>
+      {avisoCsv && <p className="mt-2 text-xs font-semibold text-accent-green">{avisoCsv}</p>}
     </Card>
   )
 }
