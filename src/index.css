@@ -15,3 +15,51 @@
     @apply bg-canvas text-main antialiased;
   }
 }
+
+/* ── Exportación del Informe Ejecutivo (window.print) ──────────────────
+   El informe vive en el DOM pero no se ve en pantalla; al imprimir se
+   invierte: se oculta la aplicación y solo queda el informe. Así el PDF
+   que compone el navegador lleva texto vectorial (seleccionable y
+   buscable) en lugar de una captura rasterizada. */
+
+.solo-imprimir {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    /* Sin esto el contenido hereda el ancho del layout y se corta. */
+    width: auto !important;
+    height: auto !important;
+  }
+
+  /* Por defecto los navegadores no imprimen fondos: sin esta regla las
+     barras de progreso y los recuadros de alerta salen en blanco. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-imprimir {
+    display: none !important;
+  }
+
+  .solo-imprimir {
+    display: block !important;
+  }
+
+  /* Ningún bloque debe partirse entre dos páginas. */
+  .evitar-corte {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

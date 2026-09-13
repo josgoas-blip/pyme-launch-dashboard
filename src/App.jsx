@@ -6,6 +6,7 @@ import AnalisisView from './components/dashboard/AnalisisView.jsx'
 import EstrategiaView from './components/dashboard/EstrategiaView.jsx'
 import ViabilidadView from './components/dashboard/ViabilidadView.jsx'
 import ConfiguracionView from './components/dashboard/ConfiguracionView.jsx'
+import InformeEjecutivo from './components/informe/InformeEjecutivo.jsx'
 import { PlanProvider } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { guardarDiagnostico } from './services/diagnosticoService.js'
@@ -69,12 +70,22 @@ export default function App() {
         {respuestasOnboarding === null ? (
           <OnboardingWizard onComplete={handleOnboardingComplete} />
         ) : (
-          <AppLayout nombreUsuario="Ana López">
-            {(activeTab) => {
-              const Vista = VISTAS_POR_PESTANA[activeTab]
-              return <Vista />
-            }}
-          </AppLayout>
+          <>
+            {/* La aplicación se oculta al imprimir: el PDF solo lleva el
+                informe. Por eso el informe se monta fuera de este árbol. */}
+            <div className="no-imprimir">
+              <AppLayout nombreUsuario="Ana López">
+                {(activeTab) => {
+                  const Vista = VISTAS_POR_PESTANA[activeTab]
+                  return <Vista />
+                }}
+              </AppLayout>
+            </div>
+
+            {/* Informe Ejecutivo: invisible en pantalla, es lo único que
+                compone el navegador al generar el PDF. */}
+            <InformeEjecutivo respuestas={respuestasOnboarding} />
+          </>
         )}
       </OnboardingProvider>
     </PlanProvider>
