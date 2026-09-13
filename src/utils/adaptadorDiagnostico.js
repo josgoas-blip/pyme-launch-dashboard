@@ -8,12 +8,12 @@
  * falta, el Dashboard sigue mostrando el mock íntegro, nunca huecos.
  *
  * Regla de honestidad del PMV: solo se derivan las cifras que el
- * diagnóstico sustenta de verdad. El punto muerto, el VAN y la TIR siguen
- * viniendo del mock, porque el cuestionario no recoge ni costes fijos
- * mensuales ni margen de contribución.
+ * diagnóstico sustenta de verdad. La pestaña de Viabilidad ya no pasa por
+ * aquí ni tiene mock: sus cifras se derivan del bloque financiero real en
+ * `viabilidadDiagnostico.js`, y lo que el cuestionario no sostiene (punto
+ * muerto, VAN, TIR) se declara pendiente en vez de simularse.
  */
 import { controlProyecto, calidadEvidencia, recorridoProyecto } from '../data/dashboardMock.js'
-import { metricasProyectadas, escenariosVan, supuestosClave } from '../data/viabilidadMock.js'
 import {
   indiceMadurez,
   indiceSolidezEvidencia,
@@ -57,7 +57,6 @@ export const MOCKS_BASE = {
     escaleraOfertas,
     accionesSugeridas,
   },
-  viabilidad: { metricasProyectadas, escenariosVan, supuestosClave },
 }
 
 /**
@@ -83,15 +82,6 @@ const PROXIMA_ACCION_POR_DIMENSION = {
   operaciones_equipo: 'Definir tus necesidades operativas',
   solvencia_financiera: 'Preparar el plan de tesorería a 6 meses',
 }
-
-const DIAS_POR_MES = 30
-
-const formatoEUR = (n) =>
-  new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: 'EUR',
-    maximumFractionDigits: 0,
-  }).format(n)
 
 /** Lee una variable del diagnóstico solo si es un número utilizable. */
 function numeroDe(respuestas, clave) {
@@ -152,61 +142,17 @@ function adaptarAnalisis(respuestas, base) {
 }
 
 /**
- * Viabilidad: la autonomía sale del colchón declarado y los supuestos
- * clave se sustituyen por las cifras que el usuario ha aportado.
- */
-function adaptarViabilidad(respuestas, base) {
-  const inversion = numeroDe(respuestas, 'p18_inversion_total')
-  const propios = numeroDe(respuestas, 'p18_recursos_propios')
-  const colchon = numeroDe(respuestas, 'p19_meses_colchon')
-  const breakeven = numeroDe(respuestas, 'p19_meses_breakeven')
-
-  if (inversion === undefined && colchon === undefined) return base
-
-  const supuestosDeclarados = []
-  if (inversion !== undefined) {
-    supuestosDeclarados.push({
-      id: 'inversion-total',
-      etiqueta: 'Inversión total',
-      valor: { valor: formatoEUR(inversion), tipo_evidencia: 'Dato declarado' },
-    })
-  }
-  if (propios !== undefined) {
-    supuestosDeclarados.push({
-      id: 'recursos-propios',
-      etiqueta: 'Recursos propios',
-      valor: { valor: formatoEUR(propios), tipo_evidencia: 'Dato declarado' },
-    })
-  }
-  if (breakeven !== undefined) {
-    supuestosDeclarados.push({
-      id: 'meses-breakeven',
-      etiqueta: 'Meses a equilibrio',
-      valor: { valor: `${breakeven} meses`, tipo_evidencia: 'Estimación' },
-    })
-  }
-
-  return {
-    ...base,
-    metricasProyectadas: {
-      ...base.metricasProyectadas,
-      autonomia: colchon !== undefined ? colchon * DIAS_POR_MES : base.metricasProyectadas.autonomia,
-    },
-    // Los supuestos declarados desplazan a las hipótesis del mock; se
-    // conserva el crecimiento anual, que sigue siendo un escenario.
-    supuestosClave: supuestosDeclarados.length
-      ? [...supuestosDeclarados, ...base.supuestosClave.filter((s) => s.id === 'crecimiento-anual')]
-      : base.supuestosClave,
-  }
-}
-
-/**
  * Función principal: construye los datos de las 4 pestañas de contenido a
  * partir del diagnóstico, usando los mocks como respaldo.
  *
- * Estrategia no se adapta: el modelo del TFM no recoge canal de captación
- * ni modelo de ingresos con el detalle que necesita esa pestaña, así que
- * sus cuadrantes siguen mostrando los datos de referencia del mock.
+ * Estrategia no se adapta aquí: sus dos cuadrantes conectados al
+ * diagnóstico (Adquisición y Monetización) se derivan en
+ * `estrategiaDiagnostico.js`, y el resto sigue mostrando datos de
+ * referencia del mock.
+ *
+ * Viabilidad tampoco pasa por aquí: se deriva íntegramente del bloque
+ * financiero del cuestionario en `viabilidadDiagnostico.js`, sin mock de
+ * respaldo, porque una cifra financiera simulada induciría a error.
  *
  * @param {Record<string, unknown> | null} respuestas - Salida del OnboardingWizard.
  * @param {typeof MOCKS_BASE} [mocksBase] - Respaldo inyectable (útil para pruebas).
@@ -219,6 +165,5 @@ export function adaptarDiagnostico(respuestas, mocksBase = MOCKS_BASE) {
     inicio: adaptarInicio(respuestas, mocksBase.inicio),
     analisis: adaptarAnalisis(respuestas, mocksBase.analisis),
     estrategia: mocksBase.estrategia,
-    viabilidad: adaptarViabilidad(respuestas, mocksBase.viabilidad),
   }
 }

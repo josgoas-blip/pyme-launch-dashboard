@@ -49,7 +49,6 @@ function construirBienvenida(respuestas) {
  */
 function responderSimulado(pregunta, { respuestas, datos }) {
   const texto = pregunta.toLowerCase()
-  const { puntoMuerto } = datos.viabilidad.metricasProyectadas
   const { fase_actual, proxima_accion } = datos.inicio.controlProyecto
   const debil = dimensionMasDebil(respuestas?.dimensiones)
 
@@ -66,7 +65,7 @@ function responderSimulado(pregunta, { respuestas, datos }) {
       meses !== undefined && colchon !== undefined && colchon < meses
         ? ` Ojo: declaraste ${colchon} meses de colchón frente a ${meses} hasta el equilibrio, así que hay una brecha de ${meses - colchon} meses que conviene cubrir.`
         : ''
-    return `El punto muerto que ves en Viabilidad (${formatoEUR(puntoMuerto)}/mes) es una referencia del modelo: el diagnóstico recoge tu horizonte hasta el equilibrio, no tus costes fijos mensuales, así que esa cifra no está calculada con datos tuyos.${aviso}`
+    return `La pestaña Viabilidad no te muestra una cifra de punto muerto: el diagnóstico recoge tu horizonte hasta el equilibrio, no tus costes fijos mensuales ni tu margen de contribución, así que cualquier euro que pusiéramos ahí sería inventado.${aviso}`
   }
 
   if (texto.includes('inversión') || texto.includes('financiación') || texto.includes('colchón')) {
