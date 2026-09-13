@@ -1,6 +1,7 @@
 import { FlaskConical, RotateCcw } from 'lucide-react'
 import TabNav from './TabNav.jsx'
 import { calcularEstadoGlobal } from '../../utils/estadoGlobal.js'
+import { derivarResumenGlobal } from '../../utils/resumenDiagnostico.js'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { PLANES, PLAN_INFO } from '../../utils/planes.js'
@@ -15,9 +16,11 @@ import { PLANES, PLAN_INFO } from '../../utils/planes.js'
  */
 export default function Header({ nombreUsuario, activeTab, onTabChange }) {
   const { plan, setPlan } = usePlan()
-  const { datos, reiniciarOnboarding } = useOnboarding()
-  const { controlProyecto } = datos.inicio
-  const estadoGlobal = calcularEstadoGlobal(controlProyecto.progreso_recorrido)
+  const { respuestas, reiniciarOnboarding } = useOnboarding()
+  // El distintivo de cabecera cita el mismo score y la misma fase que el
+  // Resumen General, para que el usuario no vea dos cifras distintas.
+  const resumen = derivarResumenGlobal(respuestas)
+  const estadoGlobal = calcularEstadoGlobal(resumen?.score ?? 0)
 
   return (
     <header className="bg-primary text-white">
@@ -53,7 +56,7 @@ export default function Header({ nombreUsuario, activeTab, onTabChange }) {
                   className="h-1.5 w-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: estadoGlobal.colorSemaforo }}
                 />
-                {controlProyecto.fase_actual} · {estadoGlobal.calificativo}
+                {resumen?.fase ?? 'Sin diagnóstico'} · {estadoGlobal.calificativo}
               </span>
             </div>
           </div>

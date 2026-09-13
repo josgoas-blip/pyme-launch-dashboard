@@ -6,6 +6,7 @@ import { creditosDelPlan, siguientePlan, PLAN_INFO } from '../../utils/planes.js
 import { consultarAgente, hayWebhookAgente } from '../../services/agenteService.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 import { dimensionMasDebil } from '../../utils/scoreDiagnostico.js'
+import { derivarResumenGlobal } from '../../utils/resumenDiagnostico.js'
 
 /** Retardo del modo local, para que la respuesta no aparezca de golpe. */
 const RETARDO_RESPUESTA_MS = 900
@@ -49,7 +50,11 @@ function construirBienvenida(respuestas) {
  */
 function responderSimulado(pregunta, { respuestas, datos }) {
   const texto = pregunta.toLowerCase()
-  const { fase_actual, proxima_accion } = datos.inicio.controlProyecto
+  // Mismas cifras que el Resumen General: el agente no puede citar una fase
+  // ni una acción distintas de las que el usuario ve en el panel.
+  const resumen = derivarResumenGlobal(respuestas)
+  const fase_actual = resumen?.fase ?? 'sin diagnóstico'
+  const proxima_accion = resumen?.proximaAccion ?? 'completar el diagnóstico'
   const debil = dimensionMasDebil(respuestas?.dimensiones)
 
   if (texto.includes('score') || texto.includes('puntuación') || texto.includes('diagnóstico')) {
@@ -81,7 +86,7 @@ function responderSimulado(pregunta, { respuestas, datos }) {
   }
 
   if (texto.includes('van') || texto.includes('tir') || texto.includes('escenario')) {
-    return 'El VAN y la TIR de la pestaña Viabilidad son proyecciones bajo los Supuestos Clave del panel lateral, no resultados garantizados. Léelos siempre en la clave "bajo estos supuestos": si cambias precio o crecimiento, cambian los tres escenarios.'
+    return 'El VAN y la TIR aparecen en Viabilidad como pendientes de datos: harían falta tu serie de flujos de caja y una tasa de descuento, y el diagnóstico no las recoge. Lo que sí proyecta esa pestaña son tres escenarios de saldo de caja construidos con tu inversión y tus plazos declarados; léelos siempre en la clave "bajo estos supuestos".'
   }
 
   if (texto.includes('riesgo') || texto.includes('dafo')) {

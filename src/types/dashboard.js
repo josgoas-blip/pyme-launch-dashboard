@@ -1,8 +1,13 @@
 /**
- * Tipos (JSDoc) de la pestaña "Inicio" — Pyme Launch Dashboard (PMV, Fase Semilla).
- * El proyecto usa JavaScript (no TypeScript), por lo que las "interfaces" se
- * documentan aquí como typedefs JSDoc. Sirven de contrato entre los mocks
- * (src/data/dashboardMock.js) y los componentes visuales.
+ * Tipos (JSDoc) del Resumen General — pestaña "Inicio" del Pyme Launch
+ * Dashboard (PMV, Fase Semilla). El proyecto usa JavaScript (no
+ * TypeScript), por lo que las "interfaces" se documentan aquí como
+ * typedefs JSDoc.
+ *
+ * Esta pestaña no tiene mock: es el contrato entre las derivaciones de
+ * `src/utils/resumenDiagnostico.js` y los componentes visuales. La
+ * Taxonomía de Evidencia que se define aquí la comparten además los
+ * cuadrantes de Análisis y Viabilidad.
  */
 
 /**
@@ -18,19 +23,37 @@
  */
 
 /**
- * Variables de control del recorrido del proyecto (Fase Semilla).
- * @typedef {Object} ControlProyecto
- * @property {number} progreso_recorrido - % de avance global del recorrido (0-100).
- * @property {string} fase_actual - Fase actual dentro del recorrido, p.ej. "Validación del problema".
- * @property {string} proxima_accion - Próxima acción recomendada, p.ej. "Registrar 5 entrevistas".
+ * Una de las cuatro dimensiones del modelo de evaluación del TFM, con la
+ * puntuación que ha obtenido en el diagnóstico.
+ * @typedef {Object} DimensionDiagnostico
+ * @property {string} id - p.ej. "validacion_mercado".
+ * @property {string} etiqueta - p.ej. "Validación y mercado".
+ * @property {number} peso - Peso sobre el score total (0-1).
+ * @property {number} puntuacion - Puntuación de la dimensión (0-100).
  */
 
 /**
- * Desglose de la Calidad de la Evidencia aportada al proyecto.
+ * Resumen global del proyecto: las cifras de cabecera del panel, idénticas
+ * a las de la pantalla final del cuestionario.
+ * @typedef {Object} ResumenGlobal
+ * @property {number} score - `score_total` del diagnóstico (0-100).
+ * @property {string} fase - `fase_embudo`, p.ej. "Validación".
+ * @property {DimensionDiagnostico[]} dimensiones - Exactamente 4.
+ * @property {{ id: string, etiqueta: string, puntuacion: number } | null} dimensionDebil
+ * @property {string[]} alertas - Penalizaciones que aplica el modelo al score.
+ * @property {string|undefined} proximaAccion - Palanca derivada de la dimensión más débil.
+ */
+
+/**
+ * Una barra del cuadrante "Calidad de la Evidencia": una de las cuatro
+ * preguntas del modelo que miden qué ha contrastado el usuario (p4-p7).
  * @typedef {Object} ItemCalidadEvidencia
  * @property {string} id
- * @property {TipoEvidencia} tipo
- * @property {number} porcentaje - % del total de datos con esta procedencia (las 4 partidas suman 100).
+ * @property {string} etiqueta - p.ej. "Contacto directo con clientes".
+ * @property {number} nivel - Nivel declarado (1-5).
+ * @property {number} porcentaje - El nivel normalizado a 0-100.
+ * @property {TipoEvidencia} tipo - Procedencia que implica ese nivel.
+ * @property {string|undefined} detalle - Opción que el usuario eligió.
  */
 
 /**
@@ -39,14 +62,6 @@
  * @property {string} id
  * @property {string} paso
  * @property {'Completado'|'En curso'|'Bloqueado'} estado
- */
-
-/**
- * Estructura completa de datos de la pestaña Inicio.
- * @typedef {Object} InicioDashboardData
- * @property {ControlProyecto} controlProyecto
- * @property {ItemCalidadEvidencia[]} calidadEvidencia - Exactamente 4 partidas.
- * @property {PasoRecorrido[]} recorridoProyecto - Exactamente 5 pasos.
  */
 
 export {}
