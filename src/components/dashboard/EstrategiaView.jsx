@@ -9,6 +9,7 @@ import PlanAccionCameDetail from './PlanAccionCameDetail.jsx'
 import PaywallCard from './PaywallCard.jsx'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { tieneAcceso } from '../../utils/planes.js'
+import { derivarAdquisicion, derivarMonetizacion } from '../../utils/estrategiaDiagnostico.js'
 
 /**
  * Ensambla la pestaña "Estrategia" — "¿Qué debería trabajar ahora?": 3
@@ -21,15 +22,19 @@ import { tieneAcceso } from '../../utils/planes.js'
  */
 export default function EstrategiaView() {
   const { plan } = usePlan()
-  const { datos } = useOnboarding()
+  const { datos, respuestas } = useOnboarding()
   const {
     iniciativasCame,
     mitigacionRiesgos,
-    canalesCaptacion,
     funnelConversion,
-    escaleraOfertas,
     accionesSugeridas,
   } = datos.estrategia
+
+  // Bloques conectados al diagnóstico real (p12 y p10). Devuelven `null`
+  // cuando no hay diagnóstico cargado; los componentes muestran entonces un
+  // placeholder en lugar de datos ficticios.
+  const adquisicion = derivarAdquisicion(respuestas)
+  const monetizacion = derivarMonetizacion(respuestas)
 
   if (!tieneAcceso(plan, 'assist')) {
     return (
@@ -71,7 +76,7 @@ export default function EstrategiaView() {
           titulo="Adquisición y Funnel de Conversión Digital"
           subtitulo="Canales de captación y embudo de conversión de prospectos"
         />
-        <MatrizCanalesCaptacion canalesCaptacion={canalesCaptacion} />
+        <MatrizCanalesCaptacion adquisicion={adquisicion} />
         <FunnelConversionDigital funnelConversion={funnelConversion} />
       </section>
 
@@ -82,7 +87,7 @@ export default function EstrategiaView() {
           titulo="Monetización y Acciones Sugeridas"
           subtitulo="Escalera de ofertas y recomendaciones de prevalidación"
         />
-        <EscaleraOfertasPricing escaleraOfertas={escaleraOfertas} />
+        <EscaleraOfertasPricing monetizacion={monetizacion} />
         <PlanAccionCameDetail accionesSugeridas={accionesSugeridas} />
       </section>
     </div>
