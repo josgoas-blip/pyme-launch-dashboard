@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react'
 import { Card } from '../ui/Card.jsx'
 import {
   CAMPOS_CANTIDAD,
+  DIMENSIONES,
   OPCIONES_AUTORIZACION,
   VALORES_POR_DEFECTO,
   calcularDiagnostico,
@@ -97,14 +98,19 @@ export const BLOQUES = [
 const PASO_CONSENTIMIENTO = 0
 const PASO_FINAL = BLOQUES.length + 1
 
-/** Botón primario del wizard (verde corporativo; en gris cuando está deshabilitado). */
+/**
+ * Botón primario del wizard (verde corporativo; en gris cuando está
+ * deshabilitado). El estado deshabilitado usa gris claro con texto gris
+ * oscuro (contraste ~6:1) para que el rótulo se lea también mientras la
+ * casilla de consentimiento sigue sin marcar.
+ */
 function BotonPrimario({ disabled, onClick, children }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-card-border disabled:text-muted disabled:hover:bg-card-border"
+      className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[#E5E7EB] disabled:text-[#4B5563] disabled:hover:bg-[#E5E7EB]"
     >
       {children}
     </button>
@@ -117,7 +123,8 @@ function BotonAtras({ onClick, children }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-muted transition-colors hover:bg-canvas hover:text-main focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors hover:bg-[#F3F4F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      style={{ color: '#374151' }}
     >
       <ArrowLeft className="h-4 w-4" />
       {children}
@@ -126,31 +133,88 @@ function BotonAtras({ onClick, children }) {
 }
 
 /**
+ * Colores literales de las pantallas de entrada y de cierre.
+ *
+ * Se aplican con `style` en lugar de con clases de color (`text-main`,
+ * `text-muted`, `bg-canvas`…) porque esos tokens se resuelven a través de
+ * tailwind.config.js: si la configuración se regenera o el navegador
+ * fuerza un modo oscuro, la clase desaparece o cambia de significado y el
+ * texto de las casillas se queda sin contraste. Con valores literales el
+ * contraste está garantizado desde el primer render.
+ */
+const TEXTO_FUERTE = '#1F2937' // Títulos y etiquetas de casilla
+const TEXTO_SUAVE = '#4B5563'  // Descripciones (contraste 7:1 sobre blanco)
+const BORDE_CAJA = '#E5E7EB'
+const FONDO_CAJA = '#FFFFFF'
+const VERDE_CORPORATIVO = '#1B4D3E'
+
+/** Enunciado de reserva: la casilla nunca debe quedarse sin texto. */
+const TEXTO_CASILLA_POR_DEFECTO =
+  'Acepto continuar con el diagnóstico y el tratamiento de mis datos de forma anónima y confidencial.'
+
+/**
  * Casilla de verificación con etiqueta larga, alineada arriba.
- * El texto se pinta siempre en gris oscuro sobre la tarjeta clara: es
- * legible en todo momento, sin depender de hover, foco ni del tema del
- * sistema operativo.
+ *
+ * El texto se pinta siempre: no depende de `checked`, de pseudo-clases,
+ * de transiciones ni de los tokens del tema. Si `children` llegara vacío
+ * se muestra `TEXTO_CASILLA_POR_DEFECTO`, de modo que la caja no puede
+ * aparecer en blanco.
  */
 function CasillaLegal({ id, checked, onChange, children }) {
+  const texto = children || TEXTO_CASILLA_POR_DEFECTO
+
   return (
     <label
       htmlFor={id}
-      className="flex cursor-pointer items-start rounded-xl border border-card-border bg-canvas p-4 text-left transition-colors hover:border-primary/40"
+      className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-left shadow-sm"
+      style={{ backgroundColor: FONDO_CAJA, borderColor: BORDE_CAJA }}
     >
       <input
         id={id}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-card-border text-primary focus:ring-primary/40"
+        className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded"
+        style={{ accentColor: VERDE_CORPORATIVO, borderColor: '#9CA3AF' }}
       />
-      {/* Texto estático e incondicional: no depende de `checked`, de
-          pseudo-clases ni de transiciones. Se lee desde el primer render,
-          con la casilla marcada o sin marcar. */}
-      <span className="ml-2 select-none text-sm font-normal leading-snug text-gray-700">
-        {children}
+      <span
+        className="select-none text-sm font-medium leading-relaxed"
+        style={{ color: TEXTO_FUERTE }}
+      >
+        {texto}
       </span>
     </label>
+  )
+}
+
+/**
+ * Caja informativa de las pantallas de entrada y cierre: un rótulo corto
+ * y un texto descriptivo, ambos con color literal para que siempre se
+ * lean. `descripcion` admite un valor de reserva porque estas cajas se
+ * pintan antes de que existan respuestas del cuestionario.
+ */
+function CajaInformativa({ rotulo, titulo, descripcion, children }) {
+  return (
+    <div
+      className="rounded-xl border p-4 text-left"
+      style={{ backgroundColor: '#F9FAFB', borderColor: BORDE_CAJA }}
+    >
+      {rotulo && (
+        <p
+          className="text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: VERDE_CORPORATIVO }}
+        >
+          {rotulo}
+        </p>
+      )}
+      <p className="mt-1 text-sm font-bold leading-snug" style={{ color: TEXTO_FUERTE }}>
+        {titulo || 'Bloque del cuestionario'}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed" style={{ color: TEXTO_SUAVE }}>
+        {descripcion || 'Sin información adicional.'}
+      </p>
+      {children}
+    </div>
   )
 }
 
@@ -349,19 +413,85 @@ function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, e
   )
 }
 
-/** Resultado del diagnóstico mostrado en la pantalla final. */
-function ResumenScore({ score, fase }) {
+/**
+ * Resultado del diagnóstico mostrado en la pantalla final.
+ *
+ * Las dos cifras se sanean antes de pintarse: si el score no fuese un
+ * número (campo numérico a medio escribir) o la fase llegase vacía, la
+ * caja mostraría un hueco en blanco en lugar de un dato. Con los valores
+ * de reserva siempre hay algo legible.
+ */
+function ResumenScore({ score, fase, dimensiones }) {
+  const scoreVisible = Number.isFinite(Number(score)) ? Math.round(Number(score)) : 0
+  const faseVisible = typeof fase === 'string' && fase.trim() ? fase : 'Idea'
+
   return (
-    <div className="flex items-center justify-center gap-6 rounded-xl border border-card-border bg-canvas p-4">
-      <div className="text-center">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Score</p>
-        <p className="text-3xl font-extrabold text-main">{score}</p>
-        <p className="text-[11px] text-muted">sobre 100</p>
+    <div className="flex flex-col gap-4">
+      <div
+        className="flex items-center justify-center gap-6 rounded-xl border p-4"
+        style={{ backgroundColor: '#F9FAFB', borderColor: BORDE_CAJA }}
+      >
+        <div className="text-center">
+          <p
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: TEXTO_SUAVE }}
+          >
+            Score
+          </p>
+          <p className="text-3xl font-extrabold" style={{ color: TEXTO_FUERTE }}>
+            {scoreVisible}
+          </p>
+          <p className="text-[11px]" style={{ color: TEXTO_SUAVE }}>
+            sobre 100
+          </p>
+        </div>
+        <div className="h-12 w-px" style={{ backgroundColor: BORDE_CAJA }} />
+        <div className="text-center">
+          <p
+            className="text-xs font-semibold uppercase tracking-wider"
+            style={{ color: TEXTO_SUAVE }}
+          >
+            Fase del embudo
+          </p>
+          <p className="mt-1 text-lg font-bold" style={{ color: VERDE_CORPORATIVO }}>
+            {faseVisible}
+          </p>
+        </div>
       </div>
-      <div className="h-12 w-px bg-card-border" />
-      <div className="text-center">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Fase del embudo</p>
-        <p className="mt-1 text-lg font-bold text-primary">{fase}</p>
+
+      {/* Desglose por dimensión: se recorre el catálogo del modelo, no las
+          claves del resultado, así que las 4 cajas existen aunque el
+          diagnóstico devolviese un objeto incompleto. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {DIMENSIONES.map((dimension) => {
+          const bruto = Number(dimensiones?.[dimension.id])
+          const valor = Number.isFinite(bruto) ? Math.round(bruto) : 0
+          return (
+            <div
+              key={dimension.id}
+              className="rounded-xl border p-3"
+              style={{ backgroundColor: FONDO_CAJA, borderColor: BORDE_CAJA }}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-xs font-semibold leading-snug" style={{ color: TEXTO_FUERTE }}>
+                  {dimension.etiqueta}
+                </p>
+                <p className="text-sm font-extrabold" style={{ color: VERDE_CORPORATIVO }}>
+                  {valor}
+                </p>
+              </div>
+              <div
+                className="mt-2 h-1.5 w-full overflow-hidden rounded-full"
+                style={{ backgroundColor: BORDE_CAJA }}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${valor}%`, backgroundColor: VERDE_CORPORATIVO }}
+                />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -469,8 +599,12 @@ export default function OnboardingWizard({ onComplete }) {
     }
   }
 
-  // El resultado se calcula en vivo para poder mostrarlo en la pantalla final.
-  const resultado = calcularDiagnostico(valores)
+  // El resultado se calcula en vivo para poder mostrarlo en la pantalla
+  // final. Se normaliza antes (igual que en `construirRespuestas`) para que
+  // el score que se muestra sea exactamente el que se persiste, aunque los
+  // campos numéricos aún contengan el texto crudo del input.
+  const resultado = calcularDiagnostico(normalizarVariables(valores))
+  const penalizaciones = resultado.penalizaciones ?? []
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
@@ -497,15 +631,38 @@ export default function OnboardingWizard({ onComplete }) {
         {paso === PASO_CONSENTIMIENTO && (
           <Card className="flex flex-col gap-6">
             <div className="flex flex-col items-center gap-3 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <span
+                className="flex h-12 w-12 items-center justify-center rounded-full"
+                style={{ backgroundColor: '#E7EEEB', color: VERDE_CORPORATIVO }}
+              >
                 <ShieldCheck className="h-6 w-6" />
               </span>
-              <h2 className="text-xl font-bold text-main">Antes de empezar</h2>
-              <p className="max-w-md text-sm leading-relaxed text-muted">
+              <h2 className="text-xl font-bold" style={{ color: TEXTO_FUERTE }}>
+                Antes de empezar
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
                 Evaluación diagnóstica para calibrar la madurez y viabilidad de tu emprendimiento.
                 Son 20 preguntas repartidas en 4 bloques; todas parten de un valor orientativo que
                 puedes ajustar.
               </p>
+            </div>
+
+            {/* Qué se va a preguntar en cada paso. Se genera a partir de
+                BLOQUES, la misma fuente que pinta el cuestionario, así que
+                las cajas nunca quedan vacías ni se desincronizan. */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {BLOQUES.map((bloque, indice) => (
+                <CajaInformativa
+                  key={bloque.id}
+                  rotulo={`Bloque ${indice + 1}`}
+                  titulo={bloque.titulo}
+                  descripcion={bloque.descripcion}
+                >
+                  <p className="mt-2 text-[11px] font-semibold" style={{ color: TEXTO_SUAVE }}>
+                    {bloque.preguntas.length} preguntas
+                  </p>
+                </CajaInformativa>
+              ))}
             </div>
 
             <CasillaLegal
@@ -567,19 +724,57 @@ export default function OnboardingWizard({ onComplete }) {
         {paso === PASO_FINAL && (
           <Card className="flex flex-col gap-6">
             <div className="flex flex-col items-center gap-3 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-green/10 text-accent-green">
+              <span
+                className="flex h-12 w-12 items-center justify-center rounded-full"
+                style={{ backgroundColor: '#E3F5EE', color: '#10B981' }}
+              >
                 <CheckCircle2 className="h-6 w-6" />
               </span>
-              <h2 className="text-xl font-bold text-main">
+              <h2 className="text-xl font-bold" style={{ color: TEXTO_FUERTE }}>
                 Tus datos han sido validados con éxito por el sistema
               </h2>
-              <p className="max-w-md text-sm leading-relaxed text-muted">
+              <p className="max-w-md text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
                 Hemos calculado tu score de viabilidad con las 20 variables del diagnóstico. Es una
                 foto de tu punto de partida, no una calificación definitiva.
               </p>
             </div>
 
-            <ResumenScore score={resultado.score_total} fase={resultado.fase_embudo} />
+            <ResumenScore
+              score={resultado.score_total}
+              fase={resultado.fase_embudo}
+              dimensiones={resultado.dimensiones}
+            />
+
+            {/* Penalizaciones detectadas. Cuando no hay ninguna la caja
+                sigue presente con el texto de reserva: así el usuario ve
+                que el bloque se ha evaluado y no un hueco en blanco. */}
+            <CajaInformativa
+              rotulo="Puntos de atención"
+              titulo={
+                penalizaciones.length > 0
+                  ? `${penalizaciones.length} aspecto${penalizaciones.length > 1 ? 's' : ''} penaliza${penalizaciones.length > 1 ? 'n' : ''} tu score`
+                  : 'Sin penalizaciones detectadas'
+              }
+              descripcion={
+                penalizaciones.length > 0
+                  ? 'El diagnóstico ha restado puntos por lo siguiente:'
+                  : 'Ninguna de tus respuestas activa las penalizaciones del modelo (autorización legal, colchón financiero o incidencias).'
+              }
+            >
+              {penalizaciones.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {penalizaciones.map((penalizacion) => (
+                    <li
+                      key={penalizacion}
+                      className="text-xs font-semibold leading-snug"
+                      style={{ color: '#E53E3E' }}
+                    >
+                      · {penalizacion}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CajaInformativa>
 
             <CasillaLegal
               id="terminos-servicio"
