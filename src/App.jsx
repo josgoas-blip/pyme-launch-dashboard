@@ -9,6 +9,11 @@ import ConfiguracionView from './components/dashboard/ConfiguracionView.jsx'
 import { PlanProvider } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { guardarDiagnostico } from './services/diagnosticoService.js'
+import {
+  cargarDiagnosticoLocal,
+  guardarDiagnosticoLocal,
+  borrarDiagnosticoLocal,
+} from './utils/persistenciaDiagnostico.js'
 
 const VISTAS_POR_PESTANA = {
   inicio: InicioView,
@@ -19,24 +24,41 @@ const VISTAS_POR_PESTANA = {
 }
 
 export default function App() {
-  /** Diagnóstico del cuestionario previo. `null` = onboarding sin completar. */
-  const [respuestasOnboarding, setRespuestasOnboarding] = useState(null)
+  /**
+   * Diagnóstico del cuestionario previo. `null` = onboarding sin completar.
+   *
+   * El estado arranca con lo que haya guardado este navegador, de modo que
+   * una recarga (F5) o una visita posterior devuelvan al panel en lugar de
+   * al cuestionario. El inicializador es perezoso: `cargarDiagnosticoLocal`
+   * solo se ejecuta en el primer render, no en cada uno. Si no hay nada
+   * guardado, o lo guardado está corrupto, devuelve `null` y se muestra el
+   * onboarding.
+   */
+  const [respuestasOnboarding, setRespuestasOnboarding] = useState(cargarDiagnosticoLocal)
 
   /**
    * Recibe las respuestas del wizard y habilita la vista del Dashboard.
-   * La persistencia va en segundo plano: el acceso al panel no espera a
-   * Supabase, y si la escritura falla el servicio lo encola en memoria.
+   *
+   * La sesión se guarda en el navegador de forma síncrona —es lo que
+   * sostiene la recarga— y la persistencia en Supabase va en segundo
+   * plano: el acceso al panel no espera a la red, y si la escritura falla
+   * el servicio lo encola en memoria.
    */
   const handleOnboardingComplete = (respuestas) => {
     setRespuestasOnboarding(respuestas)
+    guardarDiagnosticoLocal(respuestas)
     guardarDiagnostico(respuestas)
   }
 
   /**
-   * Botón de desarrollo: devuelve al cuestionario sin recargar la sesión.
-   * Al desmontarse, el wizard reinicia su estado interno (pasos y respuestas).
+   * Nuevo diagnóstico: devuelve al cuestionario y borra la sesión guardada,
+   * para que "empezar de cero" siga significando eso tras una recarga. El
+   * histórico ya persistido en Supabase no se toca.
    */
-  const handleReiniciarOnboarding = () => setRespuestasOnboarding(null)
+  const handleReiniciarOnboarding = () => {
+    borrarDiagnosticoLocal()
+    setRespuestasOnboarding(null)
+  }
 
   return (
     <PlanProvider planInicial="report">

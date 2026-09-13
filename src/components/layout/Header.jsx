@@ -1,5 +1,6 @@
-import { FlaskConical, RotateCcw } from 'lucide-react'
+import { FlaskConical } from 'lucide-react'
 import TabNav from './TabNav.jsx'
+import BotonNuevoDiagnostico from './BotonNuevoDiagnostico.jsx'
 import { calcularEstadoGlobal } from '../../utils/estadoGlobal.js'
 import { derivarResumenGlobal } from '../../utils/resumenDiagnostico.js'
 import { usePlan } from '../../context/PlanContext.jsx'
@@ -88,16 +89,8 @@ export default function Header({ nombreUsuario, activeTab, onTabChange }) {
               ))}
             </div>
 
-            {/* Utilidad temporal de desarrollo: repite el cuestionario sin recargar */}
-            <button
-              type="button"
-              onClick={reiniciarOnboarding}
-              title="Herramienta de desarrollo — vuelve al cuestionario de onboarding"
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-            >
-              <RotateCcw className="h-3 w-3 shrink-0" />
-              Reiniciar Onboarding
-            </button>
+            {/* Rehacer el cuestionario desde cero (borra la sesión guardada) */}
+            <BotonNuevoDiagnostico onConfirmar={reiniciarOnboarding} />
           </div>
         </div>
 

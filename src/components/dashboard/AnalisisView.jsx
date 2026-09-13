@@ -11,9 +11,29 @@ import RadarPestel from './RadarPestel.jsx'
 import RadarPorter from './RadarPorter.jsx'
 import BloqueHeader from './BloqueHeader.jsx'
 import SeccionBloqueada from './SeccionBloqueada.jsx'
+import AvisoModuloPendiente from './AvisoModuloPendiente.jsx'
 
 const MENSAJE_GATING_AVANZADO =
   'Desbloquea el análisis de mercado y entorno estructural con Launch Assist'
+
+/**
+ * Avisos de calibración por bloque.
+ *
+ * El cuestionario de 20 variables no recoge entorno sectorial, costes
+ * unitarios ni histórico de revisiones, así que estos cuadrantes se pintan
+ * con perfiles de referencia. Decirlo antes de que el usuario lea las
+ * cifras evita que las tome por un análisis de su propio proyecto.
+ */
+const AVISOS = {
+  progresoRiesgo:
+    'El scoring del Doble Indicador sí es el tuyo. La evolución histórica y la matriz DAFO, en cambio, usan un perfil de referencia: el diagnóstico todavía no guarda revisiones anteriores ni pregunta por tus debilidades y amenazas concretas.',
+  sensibilidad:
+    'Los umbrales de tolerancia son valores sectoriales de referencia. Se calcularán con tus costes fijos, tu margen de contribución y tu volumen previsto en cuanto el diagnóstico incorpore esas preguntas.',
+  mercado:
+    'TAM, SAM, SOM y el benchmark son magnitudes sectoriales de referencia, no una medición de tu mercado. Se activarán con tu sector, tu ámbito geográfico y tu ticket medio.',
+  estructurales:
+    'Módulo cualitativo en calibración sectorial: PESTEL y las 5 Fuerzas de Porter se muestran con un perfil de referencia. Los marcos estratégicos avanzados se activarán con las preguntas específicas de tu sector.',
+}
 
 /**
  * Ensambla la pestaña "Análisis" — "¿Qué sabemos del proyecto?": Doble
@@ -53,6 +73,7 @@ export default function AnalisisView() {
           titulo="Progreso y Riesgo"
           subtitulo="Evolución del scoring de viabilidad y análisis DAFO"
         />
+        <AvisoModuloPendiente mensaje={AVISOS.progresoRiesgo} />
         <EvolucionScoringChart evolucionScoring={evolucionScoring} />
         <RiesgoDafoGauge riesgoDafo={riesgoDafo} />
       </section>
@@ -64,6 +85,7 @@ export default function AnalisisView() {
           titulo="Analítica de Sensibilidad"
           subtitulo="Umbrales de tolerancia al riesgo del proyecto"
         />
+        <AvisoModuloPendiente mensaje={AVISOS.sensibilidad} />
         {accesoAvanzado ? (
           <AnalisisSensibilidadGrid analisisSensibilidad={analisisSensibilidad} />
         ) : (
@@ -80,6 +102,7 @@ export default function AnalisisView() {
           titulo="Métricas de Mercado & Entorno"
           subtitulo="Tamaño de mercado y benchmark sectorial, con su procedencia"
         />
+        <AvisoModuloPendiente mensaje={AVISOS.mercado} />
         {accesoAvanzado ? (
           <>
             <AnalisisMercadoGrid metricasMercado={metricasMercado} />
@@ -102,6 +125,7 @@ export default function AnalisisView() {
           titulo="Entornos Estructurales"
           subtitulo="PESTEL y 5 Fuerzas de Porter"
         />
+        <AvisoModuloPendiente mensaje={AVISOS.estructurales} />
         {accesoAvanzado ? (
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <RadarPestel ejesPestel={ejesPestel} />
