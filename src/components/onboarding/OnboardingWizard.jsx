@@ -153,12 +153,41 @@ const TEXTO_CASILLA_POR_DEFECTO =
   'Acepto continuar con el diagnóstico y el tratamiento de mis datos de forma anónima y confidencial.'
 
 /**
+ * Estilo del texto de una casilla legal.
+ *
+ * Es una constante a nivel de módulo, no una expresión dentro del
+ * componente: así queda explícito que NO puede derivar de `checked`. El
+ * enunciado del consentimiento se lee igual marcado que desmarcado.
+ *
+ * Tres propiedades, tres vectores de anulación distintos:
+ *  - `color`: el propio color del texto.
+ *  - `WebkitTextFillColor`: se hereda y, donde está definido, gana sobre
+ *    `color` al pintar los glifos. Si un contenedor superior lo dejara en
+ *    `transparent` (el truco habitual de los títulos con degradado), el
+ *    `color` de este span no bastaría para verse.
+ *  - `opacity`: neutraliza cualquier regla heredada que atenúe el bloque.
+ *
+ * Al ir en línea, sólo una regla `!important` podría sobreescribirlas, y
+ * la hoja de estilos compilada no contiene ninguna.
+ */
+const ESTILO_TEXTO_CASILLA = {
+  color: TEXTO_FUERTE,
+  WebkitTextFillColor: TEXTO_FUERTE,
+  opacity: 1,
+}
+
+/**
  * Casilla de verificación con etiqueta larga, alineada arriba.
  *
- * El texto se pinta siempre: no depende de `checked`, de pseudo-clases,
- * de transiciones ni de los tokens del tema. Si `children` llegara vacío
- * se muestra `TEXTO_CASILLA_POR_DEFECTO`, de modo que la caja no puede
- * aparecer en blanco.
+ * `checked` gobierna únicamente el estado del `<input>`. No interviene en
+ * el renderizado ni en el color del enunciado: el texto se pinta siempre,
+ * desde el primer render, sin depender de pseudo-clases (`peer-checked`),
+ * de transiciones ni de los tokens de color del tema. Si `children`
+ * llegara vacío se muestra `TEXTO_CASILLA_POR_DEFECTO`, de modo que la
+ * caja no puede aparecer en blanco.
+ *
+ * `colorScheme: light` en la etiqueta evita que el modo oscuro automático
+ * del navegador repinte la caja y el control nativo.
  */
 function CasillaLegal({ id, checked, onChange, children }) {
   const texto = children || TEXTO_CASILLA_POR_DEFECTO
@@ -167,7 +196,11 @@ function CasillaLegal({ id, checked, onChange, children }) {
     <label
       htmlFor={id}
       className="flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-left shadow-sm"
-      style={{ backgroundColor: FONDO_CAJA, borderColor: BORDE_CAJA }}
+      style={{
+        backgroundColor: FONDO_CAJA,
+        borderColor: BORDE_CAJA,
+        colorScheme: 'light',
+      }}
     >
       <input
         id={id}
@@ -175,12 +208,9 @@ function CasillaLegal({ id, checked, onChange, children }) {
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded"
-        style={{ accentColor: VERDE_CORPORATIVO, borderColor: '#9CA3AF' }}
+        style={{ accentColor: VERDE_CORPORATIVO, colorScheme: 'light' }}
       />
-      <span
-        className="select-none text-sm font-medium leading-relaxed"
-        style={{ color: TEXTO_FUERTE }}
-      >
+      <span className="select-none text-sm font-medium leading-relaxed" style={ESTILO_TEXTO_CASILLA}>
         {texto}
       </span>
     </label>
