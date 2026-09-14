@@ -1,5 +1,5 @@
-import { AlertTriangle, ShieldCheck, TrendingDown } from 'lucide-react'
-import { Card, CardTitle, Badge } from '../ui/Card.jsx'
+import { TrendingDown } from 'lucide-react'
+import { Card, CardTitle } from '../ui/Card.jsx'
 
 /**
  * Umbrales semafóricos compartidos con el resto del panel (33/66).
@@ -14,8 +14,10 @@ const COLOR_POR_PUNTUACION = (puntuacion) => {
 /**
  * Desglose por dimensión del Resumen General: las mismas cuatro
  * puntuaciones y pesos que muestra la pantalla final del cuestionario,
- * leídas del diagnóstico. Debajo, la dimensión que más lastra el score y
- * las alertas que el modelo aplica sobre él.
+ * leídas del diagnóstico. Debajo, la dimensión que más lastra el score.
+ *
+ * Las penalizaciones del modelo ya no se listan aquí: viven en el panel de
+ * Riesgos Críticos Activos, que además lleva a donde se resuelven.
  *
  * @param {{ resumen: ReturnType<typeof import('../../utils/resumenDiagnostico.js').derivarResumenGlobal> }} props
  */
@@ -32,28 +34,12 @@ export default function DimensionesDiagnostico({ resumen }) {
     )
   }
 
-  const { dimensiones, dimensionDebil, alertas } = resumen
-  const hayAlertas = alertas.length > 0
+  const { dimensiones, dimensionDebil } = resumen
 
   return (
     <Card>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <CardTitle>Dimensiones del diagnóstico</CardTitle>
-          <p className="mt-1 text-xs text-[#4B5563]">
-            Las cuatro áreas que ponderan tu score global
-          </p>
-        </div>
-        <Badge
-          className={
-            hayAlertas ? 'shrink-0 bg-accent-red/10 text-accent-red' : 'shrink-0 bg-accent-green/10 text-accent-green'
-          }
-        >
-          {hayAlertas
-            ? `${alertas.length} ${alertas.length === 1 ? 'alerta' : 'alertas'}`
-            : 'Sin penalizaciones'}
-        </Badge>
-      </div>
+      <CardTitle>Dimensiones del diagnóstico</CardTitle>
+      <p className="mt-1 text-xs text-[#4B5563]">Las cuatro áreas que ponderan tu score global</p>
 
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {dimensiones.map((dimension) => {
@@ -93,38 +79,19 @@ export default function DimensionesDiagnostico({ resumen }) {
         })}
       </div>
 
-      {/* Estado general: palanca de mejora y penalizaciones del modelo. */}
-      <div className="mt-5 border-t border-card-border pt-4">
-        {dimensionDebil && (
-          <p className="flex items-start gap-2 text-sm leading-snug text-[#1F2937]">
-            <TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber" />
-            <span>
-              Lo que más te lastra ahora es{' '}
-              <span className="font-semibold">{dimensionDebil.etiqueta.toLowerCase()}</span>, con{' '}
-              {dimensionDebil.puntuacion} sobre 100.
-            </span>
-          </p>
-        )}
-
-        {hayAlertas ? (
-          <ul className="mt-3 space-y-2">
-            {alertas.map((alerta) => (
-              <li
-                key={alerta}
-                className="flex items-start gap-2 rounded-xl border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-xs font-semibold leading-snug text-accent-red"
-              >
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                {alerta}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 flex items-start gap-2 rounded-xl border border-accent-green/30 bg-accent-green/10 px-3 py-2 text-xs font-semibold leading-snug text-accent-green">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            Ninguna de tus respuestas activa las penalizaciones del modelo.
-          </p>
-        )}
-      </div>
+      {/* Palanca de mejora. Las penalizaciones ya no se listan aquí: viven
+          en el panel de Riesgos Críticos Activos, donde además llevan a la
+          pestaña en la que se resuelven. */}
+      {dimensionDebil && (
+        <p className="mt-5 flex items-start gap-2 border-t border-card-border pt-4 text-sm leading-snug text-[#1F2937]">
+          <TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-accent-amber" />
+          <span>
+            Lo que más te lastra ahora es{' '}
+            <span className="font-semibold">{dimensionDebil.etiqueta.toLowerCase()}</span>, con{' '}
+            {dimensionDebil.puntuacion} sobre 100.
+          </span>
+        </p>
+      )}
     </Card>
   )
 }

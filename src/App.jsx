@@ -15,6 +15,7 @@ import {
   guardarDiagnosticoLocal,
   borrarDiagnosticoLocal,
 } from './utils/persistenciaDiagnostico.js'
+import { borrarHitosCompletados } from './utils/persistenciaHitos.js'
 
 const VISTAS_POR_PESTANA = {
   inicio: InicioView,
@@ -58,6 +59,9 @@ export default function App() {
    */
   const handleReiniciarOnboarding = () => {
     borrarDiagnosticoLocal()
+    // El avance de la hoja de ruta pertenece al diagnóstico que se borra:
+    // conservarlo dejaría hitos marcados de un plan que ya no existe.
+    borrarHitosCompletados()
     setRespuestasOnboarding(null)
   }
 

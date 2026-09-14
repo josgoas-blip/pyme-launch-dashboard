@@ -1,6 +1,7 @@
 import { Wind, Flag, Flame, ShieldCheck, ClipboardList, TrendingDown, TrendingUp, ChevronDown } from 'lucide-react'
 import { Card, CardTitle, KpiNumber, Badge } from '../ui/Card.jsx'
 import PistaTermino from '../ui/PistaTermino.jsx'
+import Delta from '../ui/Delta.jsx'
 import { INDICADORES_PENDIENTES } from '../../utils/viabilidadDiagnostico.js'
 
 const formatEUR = (n) =>
@@ -142,8 +143,11 @@ function BarometroMargen({ metricas }) {
   )
 }
 
-/** Tarjeta de KPI sencilla: cabecera, cifra y una nota opcional. */
-function TarjetaKpi({ icono, textos, valor, nota, vacio }) {
+/**
+ * Tarjeta de KPI sencilla: cabecera, cifra, un delta comparativo opcional
+ * y una nota.
+ */
+function TarjetaKpi({ icono, textos, valor, nota, vacio, delta }) {
   return (
     <Card>
       <CabeceraKpi icono={icono} textos={textos} />
@@ -152,7 +156,8 @@ function TarjetaKpi({ icono, textos, valor, nota, vacio }) {
       ) : (
         <>
           <KpiNumber className="mt-3">{valor}</KpiNumber>
-          {nota && <p className="mt-1 text-xs text-[#4B5563]">{nota}</p>}
+          {delta && <div className="mt-2">{delta}</div>}
+          {nota && <p className="mt-1.5 text-xs text-[#4B5563]">{nota}</p>}
         </>
       )}
     </Card>
@@ -189,6 +194,7 @@ export default function IndicadoresViabilidad({ metricas }) {
     autonomiaMeses,
     autonomiaDias,
     breakevenMeses,
+    margenMeses,
     consumoMensual,
     scoreSolvencia,
     nivelPrevisiones,
@@ -205,6 +211,25 @@ export default function IndicadoresViabilidad({ metricas }) {
           icono={Wind}
           textos={TEXTOS.oxigeno}
           valor={autonomiaMeses !== undefined ? `${autonomiaMeses} meses` : null}
+          // La brecha frente al equilibrio, dicha aquí mismo: sin ella, el
+          // usuario tiene que restar mentalmente contra la tarjeta de al lado.
+          delta={
+            margenMeses !== undefined ? (
+              <Delta
+                valor={margenMeses}
+                unidad={Math.abs(margenMeses) === 1 ? ' mes' : ' meses'}
+                positivo={margenMeses >= 0}
+                neutro={margenMeses === 0}
+                texto={
+                  margenMeses > 0
+                    ? 'de margen sobre el equilibrio'
+                    : margenMeses === 0
+                      ? 'justo en el equilibrio'
+                      : 'de brecha hasta el equilibrio'
+                }
+              />
+            ) : undefined
+          }
           nota={autonomiaDias !== undefined ? `Unos ${autonomiaDias} días sin ingresos suficientes` : undefined}
           vacio="No has declarado tu colchón de liquidez."
         />

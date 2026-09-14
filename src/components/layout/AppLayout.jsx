@@ -3,6 +3,7 @@ import Sidebar from './Sidebar.jsx'
 import TopBar from './TopBar.jsx'
 import { TABS } from './TabNav.jsx'
 import AgenteConsultorFlotante from '../chat/AgenteConsultorFlotante.jsx'
+import { NavegacionProvider } from '../../context/NavegacionContext.jsx'
 
 /**
  * Cascarón del Dashboard con el patrón habitual de un SaaS analítico:
@@ -42,7 +43,7 @@ export default function AppLayout({ nombreUsuario, children }) {
         <TopBar nombreUsuario={nombreUsuario} onAbrirMenu={() => setMenuAbierto(true)} />
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-          {children(activeTab)}
+          <NavegacionProvider irAPestana={setActiveTab}>{children(activeTab)}</NavegacionProvider>
         </main>
       </div>
 

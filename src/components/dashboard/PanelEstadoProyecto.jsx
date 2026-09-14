@@ -1,6 +1,17 @@
 import { Compass, ArrowRight } from 'lucide-react'
 import { Card, CardTitle } from '../ui/Card.jsx'
 import ScoreCircular from './ScoreCircular.jsx'
+import Delta from '../ui/Delta.jsx'
+import { UMBRALES_FASE_EMBUDO } from '../../utils/scoreDiagnostico.js'
+
+/**
+ * Umbral de viabilidad base: el score a partir del cual el modelo del TFM
+ * sitúa el proyecto en Tracción. No es una cifra elegida para la tarjeta,
+ * se lee del propio catálogo de umbrales para que no pueda desincronizarse
+ * si el modelo se recalibra.
+ */
+const UMBRAL_VIABILIDAD =
+  UMBRALES_FASE_EMBUDO.find((tramo) => tramo.fase === 'Tracción')?.minimo ?? 60
 
 /**
  * Color del donut según el tramo del score. Mismos cortes semafóricos que
@@ -40,14 +51,24 @@ export default function PanelEstadoProyecto({ resumen }) {
 
   return (
     <div className="space-y-4">
-      {/* Score global en donut */}
+      {/* Score global en donut, con su distancia al umbral de viabilidad */}
       <Card className="border-gray-100">
         <CardTitle>Score Global</CardTitle>
         <div className="mt-4 flex justify-center">
           <ScoreCircular valor={score} color={colorScore(score)} />
         </div>
-        <p className="mt-4 text-center text-xs leading-snug text-[#4B5563]">
-          Ponderación de las cuatro dimensiones del diagnóstico
+
+        <div className="mt-4 flex justify-center">
+          <Delta
+            valor={score - UMBRAL_VIABILIDAD}
+            unidad=" pts"
+            positivo={score >= UMBRAL_VIABILIDAD}
+            texto={score >= UMBRAL_VIABILIDAD ? 'sobre el mínimo viable' : 'del umbral de viabilidad'}
+          />
+        </div>
+
+        <p className="mt-3 text-center text-xs leading-snug text-[#4B5563]">
+          Ponderación de las cuatro dimensiones · umbral de viabilidad en {UMBRAL_VIABILIDAD} puntos
         </p>
       </Card>
 
