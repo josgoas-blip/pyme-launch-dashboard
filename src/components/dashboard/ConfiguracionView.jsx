@@ -1,13 +1,13 @@
-import { perfilCliente, preferenciasContacto } from '../../data/configuracionMock.js'
+import { perfilCliente } from '../../data/configuracionMock.js'
 import BloqueHeader from './BloqueHeader.jsx'
 import PerfilClienteCard from './PerfilClienteCard.jsx'
-import PreferenciasContactoCard from './PreferenciasContactoCard.jsx'
+import SesionEstrategicaCard from './SesionEstrategicaCard.jsx'
 import ConsolaExportacionCard from './ConsolaExportacionCard.jsx'
 
 /**
  * Ensambla la pestaña "Configuración" en 3 bloques de lectura progresiva:
- * (1) Perfil del Emprendedor & Ficha Identificativa, (2) Preferencias de
- * Acompañamiento & Canales, (3) Consola de Exportación.
+ * (1) Perfil del Emprendedor & Ficha Identificativa, (2) Sesión
+ * Estratégica de Mentoría, (3) Consola de Exportación.
  *
  * El antiguo bloque "Estado del Plan & Conexiones Técnicas" se ha
  * retirado: el estado de las integraciones es información de instalación,
@@ -28,14 +28,14 @@ export default function ConfiguracionView() {
         <PerfilClienteCard perfilCliente={perfilCliente} />
       </section>
 
-      {/* BLOQUE 2: Preferencias de Acompañamiento & Canales */}
+      {/* BLOQUE 2: Sesión Estratégica de Mentoría */}
       <section className="space-y-4 border-t border-card-border pt-8">
         <BloqueHeader
           numero={2}
-          titulo="Preferencias de Acompañamiento & Canales"
-          subtitulo="Franja horaria, canal preferido y frecuencia de mentoría"
+          titulo="Sesión Estratégica de Mentoría"
+          subtitulo="Agenda 45 minutos con tu mentor para revisar el diagnóstico"
         />
-        <PreferenciasContactoCard preferenciasContacto={preferenciasContacto} />
+        <SesionEstrategicaCard perfil={perfilCliente} />
       </section>
 
       {/* BLOQUE 3: Consola de Exportación */}
