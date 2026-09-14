@@ -1,10 +1,14 @@
 /**
  * Tarjeta base reutilizable (design.md: card-border, card-radius, card-shadow, surface-card).
+ *
+ * El borde es deliberadamente tenue y la sombra mínima: sobre el fondo gris
+ * del área de contenido, el contraste de superficie ya separa las tarjetas,
+ * y una sombra marcada ensuciaría una cuadrícula con muchas de ellas.
  */
 export function Card({ className = '', children }) {
   return (
     <div
-      className={`rounded-xl border border-card-border bg-surface p-6 shadow-sm ${className}`}
+      className={`rounded-xl border border-gray-100 bg-surface p-6 shadow-sm ${className}`}
     >
       {children}
     </div>
