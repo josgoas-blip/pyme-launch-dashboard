@@ -10,6 +10,8 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
+import PistaTermino from '../ui/PistaTermino.jsx'
+import { explicar } from '../../utils/glosario.js'
 
 const formatValor = (valor, unidad) =>
   unidad === '€'
@@ -78,11 +80,18 @@ export default function BenchmarkSectorialBar({ benchmarkSectorial }) {
 
       {/* Detalle por métrica con valores reales y badge cualitativo */}
       <ul className="mt-4 grid grid-cols-1 gap-2 border-t border-card-border pt-4 sm:grid-cols-2">
-        {data.map((item) => (
+        {data.map((item) => {
+          // Solo los acrónimos llevan pista: "Margen Neto" se lee solo.
+          const ayuda = explicar(item.id)
+          return (
           <li key={item.id} className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-muted">
-              {item.metrica}: <span className="font-semibold text-main">{formatValor(item.valorPyme, item.unidad)}</span>{' '}
-              vs {formatValor(item.valorSector, item.unidad)}
+            <span className="flex items-center gap-1.5 text-muted">
+              <span>
+                {item.metrica}:{' '}
+                <span className="font-semibold text-main">{formatValor(item.valorPyme, item.unidad)}</span> vs{' '}
+                {formatValor(item.valorSector, item.unidad)}
+              </span>
+              {ayuda && <PistaTermino texto={ayuda} etiqueta={item.metrica} />}
             </span>
             <Badge
               className={
@@ -92,7 +101,8 @@ export default function BenchmarkSectorialBar({ benchmarkSectorial }) {
               {item.esFavorable ? 'Favorable' : 'Por debajo del sector'}
             </Badge>
           </li>
-        ))}
+          )
+        })}
       </ul>
     </Card>
   )

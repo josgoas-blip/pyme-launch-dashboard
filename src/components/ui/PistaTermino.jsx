@@ -20,7 +20,10 @@ export default function PistaTermino({ texto, etiqueta = 'este indicador' }) {
     <span className="group relative inline-flex shrink-0 align-middle">
       <button
         type="button"
-        aria-label={`Qué significa ${etiqueta}`}
+        // Dos puntos y no "Qué significa X": hay términos que llegan con
+        // artículo ("los leads cualificados") y la frase quedaba torcida al
+        // leerla un lector de pantalla.
+        aria-label={`Qué significa: ${etiqueta}`}
         className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[#4B5563] transition-colors hover:text-[#1F2937] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
         <Info className="h-3.5 w-3.5" aria-hidden="true" />

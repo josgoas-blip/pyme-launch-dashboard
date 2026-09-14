@@ -1,5 +1,7 @@
 import { Compass } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
+import PistaTermino from '../ui/PistaTermino.jsx'
+import { explicar } from '../../utils/glosario.js'
 
 /**
  * Cuadrante "Canales de Captación": refleja la estrategia de adquisición
@@ -45,13 +47,21 @@ export default function MatrizCanalesCaptacion({ adquisicion }) {
 
       {/* Canales / acciones tácticas acordes al estadio */}
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {adquisicion.canales.map((canal) => (
-          <div key={canal.id} className="flex flex-col rounded-xl border border-card-border bg-canvas p-4">
-            <Badge className="self-start bg-primary/10 text-primary">{canal.foco}</Badge>
-            <p className="mt-2 text-sm font-semibold text-main">{canal.nombre}</p>
-            <p className="mt-1 text-[11px] leading-snug text-muted">{canal.descripcion}</p>
-          </div>
-        ))}
+        {adquisicion.canales.map((canal) => {
+          // Solo las acciones cuyo nombre contiene jerga llevan pista: el
+          // resto ("Programa de referidos", "Prueba social") se lee solo.
+          const ayuda = explicar(canal.id)
+          return (
+            <div key={canal.id} className="flex flex-col rounded-xl border border-card-border bg-canvas p-4">
+              <Badge className="self-start bg-primary/10 text-primary">{canal.foco}</Badge>
+              <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-main">
+                {canal.nombre}
+                {ayuda && <PistaTermino texto={ayuda} etiqueta={canal.nombre} />}
+              </p>
+              <p className="mt-1 text-[11px] leading-snug text-muted">{canal.descripcion}</p>
+            </div>
+          )
+        })}
       </div>
     </Card>
   )

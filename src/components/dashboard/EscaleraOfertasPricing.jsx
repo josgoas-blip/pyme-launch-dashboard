@@ -1,5 +1,7 @@
 import { Zap, Star, Crown } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
+import PistaTermino from '../ui/PistaTermino.jsx'
+import { explicar } from '../../utils/glosario.js'
 
 // Icono + acento por escalón de la estructura (entrada, núcleo, alto valor).
 // El escalón central (núcleo) se resalta como eje del modelo de ingresos.
@@ -60,7 +62,14 @@ export default function EscaleraOfertasPricing({ monetizacion }) {
               </div>
 
               <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">{escalon.enfoque}</p>
-              <p className="mt-1 text-sm font-bold text-main">{escalon.nombre}</p>
+              {/* Solo los escalones con jerga inglesa llevan pista; "Plan
+                  básico" o "Producto de entrada" se entienden sin ayuda. */}
+              <p className="mt-1 flex items-center gap-1.5 text-sm font-bold text-main">
+                {escalon.nombre}
+                {explicar(escalon.id) && (
+                  <PistaTermino texto={explicar(escalon.id)} etiqueta={escalon.nombre} />
+                )}
+              </p>
 
               <p className="mt-3 flex-1 text-[11px] leading-snug text-muted">{escalon.descripcion}</p>
             </div>

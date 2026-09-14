@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Card, CardTitle } from '../ui/Card.jsx'
+import PistaTermino from '../ui/PistaTermino.jsx'
+import { explicar } from '../../utils/glosario.js'
 
 const UMBRAL = 5 // punto medio de la escala 0-10 (Impacto y Esfuerzo)
 
@@ -56,7 +58,10 @@ export default function MatrizCameScatter({ iniciativasCame }) {
 
   return (
     <Card>
-      <CardTitle>Matriz de Priorización CAME</CardTitle>
+      <CardTitle className="flex items-center gap-1.5">
+        Matriz de Priorización CAME
+        <PistaTermino texto={explicar('came')} etiqueta="la matriz CAME" />
+      </CardTitle>
       <p className="mt-1 text-xs text-muted">Impacto vs Esfuerzo</p>
 
       <div className="mt-4 h-96 w-full">
