@@ -95,14 +95,14 @@ export default function SemaforoSupervivencia() {
     ? {
         estilo: 'border-accent-green/30 bg-accent-green/10 text-accent-green',
         Icono: ShieldCheck,
-        texto: `Margen de tesorería positivo (+${enMeses(holgura)} de holgura)`,
+        texto: `Margen de maniobra positivo: te sobran ${enMeses(holgura)} de oxígeno`,
       }
     : {
         estilo: critico
           ? 'border-accent-red/30 bg-accent-red/10 text-accent-red'
           : 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber',
         Icono: AlertTriangle,
-        texto: `Alerta de liquidez: se proyecta agotamiento de caja ${enMeses(deficit)} antes del break-even`,
+        texto: `Alerta de liquidez: te quedas sin caja ${enMeses(deficit)} antes del mes de equilibrio`,
       }
 
   const inversionTotal = inversion ?? 0
@@ -124,18 +124,18 @@ export default function SemaforoSupervivencia() {
       {/* ── Bloque 1: comparativa de tesorería ────────────────────────── */}
       <section className="space-y-4">
         <BarraMeses
-          etiqueta="Colchón de liquidez disponible"
+          etiqueta="Meses de oxígeno"
           meses={mesesColchon}
           porcentaje={porcentaje(mesesColchon)}
           color={hayMargen ? '#10B981' : '#E53E3E'}
-          descripcion="Tiempo que puedes sostener la estructura sin ingresos suficientes."
+          descripcion="Runway: tiempo que puedes sostener la estructura sin ingresos suficientes."
         />
         <BarraMeses
-          etiqueta="Tiempo estimado para break-even"
+          etiqueta="Mes de equilibrio"
           meses={mesesBreakeven}
           porcentaje={porcentaje(mesesBreakeven)}
           color="#1B4D3E"
-          descripcion="Meses previstos hasta cubrir los costes con ingresos propios."
+          descripcion="Break-even: mes previsto para cubrir los costes con ingresos propios."
         />
 
         <p
