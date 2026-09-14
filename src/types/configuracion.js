@@ -43,10 +43,4 @@
  * @property {number} precioMensual - €/mes.
  */
 
-/**
- * El estado de las integraciones ya no se tipa aquí: lo deriva
- * `IntegracionesList.jsx` de las señales reales de configuración
- * (`haySupabase` y `hayWebhookAgente`), no de un dato estático.
- */
-
 export {}
