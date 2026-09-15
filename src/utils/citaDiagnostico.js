@@ -169,6 +169,25 @@ export function filaDelVisitante(fila, ...identificadores) {
   const validos = identificadores.filter((id) => typeof id === 'string' && id.trim())
   if (validos.length === 0) return false
 
+  return identidadesDeFila(fila).some((marca) => validos.includes(marca))
+}
+
+/**
+ * Identificadores de visitante que lleva estampados una fila.
+ *
+ * Es la otra cara de `filaDelVisitante`: en vez de preguntar "¿esta fila es
+ * de este visitante?", responde "¿de quién es esta fila?".
+ *
+ * Hace falta cuando no se conoce al visitante de antemano. El caso claro es
+ * el Modo Consultor: el mentor abre el expediente por su identificador, y
+ * el `localStorage` de su navegador contiene su propia identidad, no la del
+ * cliente. Sin este dato, buscar las demás filas de ese cliente —la que n8n
+ * creó con la cita y los mentores— sería imposible.
+ *
+ * @param {Record<string, unknown>|null} fila
+ * @returns {string[]} Identificadores encontrados, sin repetir.
+ */
+export function identidadesDeFila(fila) {
   const respuestas = parsearRespuestas(fila?.respuestas)
 
   const marcas = [
@@ -178,7 +197,7 @@ export function filaDelVisitante(fila, ...identificadores) {
     respuestas?.id_usuario,
   ]
 
-  return marcas.some((marca) => typeof marca === 'string' && validos.includes(marca))
+  return [...new Set(marcas.filter((marca) => typeof marca === 'string' && marca.trim()))]
 }
 
 /**

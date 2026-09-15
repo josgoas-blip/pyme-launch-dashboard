@@ -1,7 +1,19 @@
-import { useEffect, useState } from 'react'
-import { CalendarDays, Clock, Loader2, CheckCircle2, Hourglass, Video, AlertTriangle, ShieldCheck } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import {
+  CalendarDays,
+  Clock,
+  Loader2,
+  CheckCircle2,
+  Hourglass,
+  Video,
+  AlertTriangle,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { solicitarSesion, leerCitaRemota, hayWebhookCita } from '../../services/citaService.js'
+import { leerFichaExpediente } from '../../services/expedienteService.js'
+import { suscribirseAlExpediente } from '../../services/realtimeExpediente.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 import { cargarCitaLocal, guardarCitaLocal } from '../../utils/persistenciaCita.js'
 import { cargarExpedienteId } from '../../utils/persistenciaDiagnostico.js'
@@ -68,6 +80,41 @@ function proximosDiasHabiles(cantidad = DIAS_HABILES_OFRECIDOS) {
   return dias
 }
 
+/**
+ * Nombre del mentor asignado, o el aviso de que aún no lo está.
+ *
+ * Se escribe "Por asignar" en vez de dejar el hueco vacío o inventar un
+ * nombre: el cliente tiene que poder distinguir "todavía no lo sabemos" de
+ * "esta es la persona con la que te reúnes".
+ *
+ * @param {{ rotulo: string, mentor: import('../../services/expedienteService.js').Mentor|null }} props
+ */
+function LineaMentor({ rotulo, mentor }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+        style={{ backgroundColor: '#FFFFFF', color: VERDE }}
+      >
+        <UserRound className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: TEXTO_SUAVE }}>
+          {rotulo}
+        </p>
+        <p className="truncate text-sm font-bold" style={{ color: mentor ? TEXTO : TEXTO_SUAVE }}>
+          {mentor?.nombre ?? 'Por asignar'}
+        </p>
+        {mentor?.especialidad && (
+          <p className="truncate text-xs" style={{ color: TEXTO_SUAVE }}>
+            {mentor.especialidad}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Envoltorio con la paleta de la tarjeta. */
 function Bloque({ children, fondo = '#FFFFFF', borde = BORDE, grosor = 'border' }) {
   return (
@@ -121,7 +168,7 @@ function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono =
 export default function SesionEstrategicaCard({ perfil }) {
   const { respuestas } = useOnboarding()
   const { userId, nombreCompleto, email: emailSesion } = useAuth()
-  const { soloLectura } = useModoLectura()
+  const { soloLectura, expedienteId: expedienteLectura } = useModoLectura()
 
   const dias = proximosDiasHabiles()
   const [fecha, setFecha] = useState(dias[0]?.iso ?? '')
@@ -150,43 +197,99 @@ export default function SesionEstrategicaCard({ perfil }) {
   )
 
   /**
-   * Revalidación contra Supabase en cada montaje.
+   * Equipo de mentoría asignado al expediente.
    *
-   * La tarjeta se monta al entrar en Configuración, así que el usuario ve
-   * la confirmación en cuanto vuelve a la pestaña. No se memoriza el
-   * resultado: la aprobación llega mientras el panel está abierto, y
-   * cachear un "todavía no" dejaría la tarjeta congelada en "en revisión".
+   * Se lee aquí además de en la ficha del perfil porque cuando la sesión
+   * está confirmada lo que el cliente necesita saber es con quién se
+   * reúne, y esa respuesta debe estar en la misma tarjeta que la fecha.
+   */
+  const [ficha, setFicha] = useState(null)
+
+  /**
+   * Relectura del estado real desde Supabase.
    *
-   * Lo remoto manda sobre la copia local, y cuando confirma se escribe
-   * también en el navegador: así la tarjeta ya no puede volver a pintar
-   * "en revisión" si una lectura posterior falla o se queda sin red.
+   * La copia local solo sirve para pintar algo mientras la red responde:
+   * la cita la aprueba el mentor fuera de este navegador, así que el
+   * `localStorage` no puede ser la fuente de la verdad. Lo que llegue de
+   * Supabase manda sobre él.
+   *
+   * Cuando la lectura confirma, se escribe también en el navegador: así la
+   * tarjeta ya no puede volver a pintar "en revisión" si una lectura
+   * posterior falla o se queda sin red. La dirección contraria no se
+   * aplica —una lectura vacía no borra una confirmación— porque un corte
+   * de red no es una cancelación.
+   */
+  const refrescarDesdeSupabase = useCallback(async (sigueVigente = () => true) => {
+    const [remota, fichaRemota] = await Promise.all([leerCitaRemota(), leerFichaExpediente()])
+
+    if (!sigueVigente()) return
+
+    if (fichaRemota) setFicha(fichaRemota)
+
+    if (!remota) return
+    setCita(remota)
+
+    if (remota.estado === ESTADO_CITA.CONFIRMADA) {
+      guardarCitaLocal({
+        estado: 'confirmada',
+        fecha: remota.fecha ? remota.fecha.toISOString() : undefined,
+        meet_url: remota.meetUrl ?? undefined,
+      })
+    }
+  }, [])
+
+  /**
+   * Revalidación al montar + suscripción en tiempo real.
+   *
+   * La lectura inicial cubre la recarga y la vuelta a la pestaña. La
+   * suscripción cubre el caso que la lectura no puede cubrir: que el
+   * mentor apruebe la sesión con el panel ya abierto. Sin ella el cliente
+   * seguiría viendo "en revisión" hasta recargar, que es exactamente el
+   * síntoma que se quería corregir.
    */
   useEffect(() => {
-    // En Modo Consultor no se revalida: la cita ya viene en el expediente
-    // cargado, y `leerCitaRemota` rastrearía por la identidad del mentor,
-    // que devolvería la cita equivocada o ninguna.
-    if (soloLectura) return undefined
-
     let vigente = true
+    const sigueVigente = () => vigente
 
-    leerCitaRemota().then((remota) => {
-      if (!vigente || !remota) return
+    // En Modo Consultor se lee el expediente del enlace en modo aislado:
+    // sin tocar el `localStorage` del mentor ni su identidad, que
+    // devolverían *su* cita y *sus* mentores en la ficha del cliente.
+    //
+    // La cita hay que leerla, no basta con la que trae el expediente
+    // cargado: n8n la escribe en una fila aparte, así que sin esta consulta
+    // al mentor se le decía que el cliente no había pedido sesión cuando en
+    // realidad la tenía confirmada con él. Tampoco se suscribe a cambios:
+    // la ficha es una foto para preparar la reunión, no un panel vivo.
+    if (soloLectura) {
+      Promise.all([
+        leerCitaRemota(expedienteLectura, { aislado: true }),
+        leerFichaExpediente(expedienteLectura),
+      ]).then(([remota, fichaRemota]) => {
+        if (!vigente) return
+        if (remota) setCita(remota)
+        if (fichaRemota) setFicha(fichaRemota)
+      })
 
-      setCita(remota)
-
-      if (remota.estado === ESTADO_CITA.CONFIRMADA) {
-        guardarCitaLocal({
-          estado: 'confirmada',
-          fecha: remota.fecha ? remota.fecha.toISOString() : undefined,
-          meet_url: remota.meetUrl ?? undefined,
-        })
+      return () => {
+        vigente = false
       }
+    }
+
+    refrescarDesdeSupabase(sigueVigente)
+
+    const darDeBaja = suscribirseAlExpediente({
+      expedienteId: cargarExpedienteId(),
+      // Las dos identidades posibles: la fila puede haberse creado antes
+      // de que el usuario se registrara.
+      identificadores: [userId, obtenerClienteAnonimo()],
+      alCambiar: () => refrescarDesdeSupabase(sigueVigente),
     })
 
     return () => {
       vigente = false
+      darDeBaja()
     }
-  }, [soloLectura])
+  }, [soloLectura, expedienteLectura, userId, refrescarDesdeSupabase])
 
   const enviar = async () => {
     // Segunda barrera además del botón deshabilitado: el estado podría
@@ -247,12 +350,33 @@ export default function SesionEstrategicaCard({ perfil }) {
 
     return (
       <Bloque fondo={VERDE_SUAVE} borde={`${VERDE}33`}>
-        <Cabecera titulo="Sesión Estratégica Confirmada" icono={CheckCircle2}>
-          Tu mentor ha aceptado la sesión
-        </Cabecera>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <Cabecera titulo="Sesión Estratégica Confirmada" icono={CheckCircle2}>
+            {soloLectura ? 'Sesión aceptada por el equipo de mentoría' : 'Tu mentor ha aceptado la sesión'}
+          </Cabecera>
 
+          <span
+            className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white"
+            style={{ backgroundColor: VERDE }}
+          >
+            Confirmada
+          </span>
+        </div>
+
+        {/* En Modo Consultor la frase se redacta en tercera persona: quien
+            lee es el mentor, y tutearle como si fuera el cliente le haría
+            dudar de si está viendo su propia agenda o la del expediente. */}
         <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO }}>
-          {cuando ? (
+          {soloLectura ? (
+            cuando ? (
+              <>
+                La sesión con este emprendedor está confirmada para el{' '}
+                <span className="font-bold">{cuando}</span>.
+              </>
+            ) : (
+              <>La sesión con este emprendedor está confirmada; la fecha aún no consta.</>
+            )
+          ) : cuando ? (
             <>
               Tu sesión ha sido confirmada para el{' '}
               <span className="font-bold">{cuando}</span>. Recibirás recordatorios en tu correo.
@@ -264,6 +388,18 @@ export default function SesionEstrategicaCard({ perfil }) {
             </>
           )}
         </p>
+
+        {/* Equipo asignado. Se pinta siempre que la sesión esté confirmada,
+            aunque todavía no haya nombres: saber que están "por asignar" es
+            información útil, y ocultar el bloque dejaría al cliente sin
+            saber si el dato existe o si la tarjeta se lo está callando. */}
+        <div
+          className="mt-4 grid grid-cols-1 gap-3 rounded-xl border p-3 sm:grid-cols-2"
+          style={{ backgroundColor: `${VERDE}0D`, borderColor: `${VERDE}26` }}
+        >
+          <LineaMentor rotulo="Tutor" mentor={ficha?.principal ?? null} />
+          <LineaMentor rotulo="Co-tutor" mentor={ficha?.coMentor ?? null} />
+        </div>
 
         {cita.meetUrl ? (
           <a

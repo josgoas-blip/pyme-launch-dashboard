@@ -18,7 +18,7 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo, usuarioActual } from './diagnosticoService.js'
-import { extraerCitaDeFila, filaDelVisitante } from '../utils/citaDiagnostico.js'
+import { extraerCitaDeFila, filaDelVisitante, identidadesDeFila } from '../utils/citaDiagnostico.js'
 import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
 /**
@@ -118,12 +118,19 @@ const LIMITE_RASTREO = 100
  * revisión" hasta recargar.
  *
  * @param {string|null} [expedienteId]
+ * @param {{ aislado?: boolean }} [opciones] - `aislado`: no usar la identidad
+ *   del navegador, solo la que venga en el propio expediente (Modo Consultor).
  * @returns {Promise<import('../utils/citaDiagnostico.js').CitaNormalizada|null>}
  */
-export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
+export async function leerCitaRemota(expedienteId = cargarExpedienteId(), { aislado = false } = {}) {
   if (!haySupabase) return null
 
   try {
+    /**
+     * Identidades con las que reconocer las demás filas de este cliente.
+     */
+    const identidades = new Set()
+
     // 1. Consulta directa al expediente, que es el camino barato y exacto.
     if (expedienteId) {
       const { data, error } = await supabase
@@ -135,6 +142,7 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
       if (!error && data) {
         const cita = extraerCitaDeFila(data)
         if (cita) return cita
+        identidadesDeFila(data).forEach((id) => identidades.add(id))
       }
     }
 
@@ -142,10 +150,20 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
     //    buscan las filas de este visitante. n8n no actualiza la fila del
     //    diagnóstico, crea una propia con el payload del webhook, así que
     //    la cita suele estar en una fila distinta a la del expediente.
-    // Se aceptan las dos identidades: la fila puede ser anterior al registro.
-    const clienteAnonimo = obtenerClienteAnonimo()
-    const usuario = await usuarioActual()
-    if (!clienteAnonimo && !usuario?.id) return null
+    //
+    //    En modo aislado (Modo Consultor) solo valen las identidades que
+    //    venían en el propio expediente: el `localStorage` es el del
+    //    mentor, y sumar la suya le mostraría su propia cita en la ficha
+    //    del cliente que está revisando.
+    if (!aislado) {
+      // Se aceptan las dos identidades: la fila puede ser anterior al registro.
+      const clienteAnonimo = obtenerClienteAnonimo()
+      const usuario = await usuarioActual()
+      if (clienteAnonimo) identidades.add(clienteAnonimo)
+      if (usuario?.id) identidades.add(usuario.id)
+    }
+
+    if (identidades.size === 0) return null
 
     const { data, error } = await supabase
       .from('diagnosticos')
@@ -158,7 +176,7 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
     // Solo filas del propio visitante: sin esta comprobación el panel
     // podría anunciar la sesión de otra persona.
     for (const fila of data) {
-      if (!filaDelVisitante(fila, clienteAnonimo, usuario?.id)) continue
+      if (!filaDelVisitante(fila, ...identidades)) continue
 
       const cita = extraerCitaDeFila(fila)
       if (cita) return cita
