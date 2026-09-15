@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, Clock, Loader2, CheckCircle2, Hourglass, Video, AlertTriangle } from 'lucide-react'
+import { CalendarDays, Clock, Loader2, CheckCircle2, Hourglass, Video, AlertTriangle, ShieldCheck } from 'lucide-react'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { solicitarSesion, leerCitaRemota, hayWebhookCita } from '../../services/citaService.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 import { cargarCitaLocal, guardarCitaLocal } from '../../utils/persistenciaCita.js'
+import { cargarExpedienteId } from '../../utils/persistenciaDiagnostico.js'
+import { useAuth } from '../../context/AuthContext.jsx'
 import { ESTADO_CITA, normalizarCita, formatearFechaCita } from '../../utils/citaDiagnostico.js'
 
 /* Paleta de la tarjeta (Pyme Launch). Se aplican como valores literales
@@ -117,12 +119,21 @@ function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono =
  */
 export default function SesionEstrategicaCard({ perfil }) {
   const { respuestas } = useOnboarding()
+  const { userId, nombreCompleto, email: emailSesion } = useAuth()
 
   const dias = proximosDiasHabiles()
   const [fecha, setFecha] = useState(dias[0]?.iso ?? '')
   const [hora, setHora] = useState(HORAS[1] ?? HORAS[0])
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState(null)
+  /**
+   * Consentimiento para compartir el diagnóstico con el mentor.
+   *
+   * Arranca siempre desmarcado y no se recuerda entre sesiones: un
+   * consentimiento es un acto explícito por cada solicitud, no una
+   * preferencia que se deje configurada una vez.
+   */
+  const [consentimiento, setConsentimiento] = useState(false)
 
   // La cita del diagnóstico manda; si no la hay, la copia local. Ambas se
   // normalizan, así que la vista trabaja siempre con la misma forma.
@@ -165,24 +176,37 @@ export default function SesionEstrategicaCard({ perfil }) {
   }, [])
 
   const enviar = async () => {
+    // Segunda barrera además del botón deshabilitado: el estado podría
+    // enviarse por teclado o por una llamada programática, y la solicitud
+    // no debe salir sin el consentimiento marcado.
+    if (!consentimiento) {
+      setError('Debes aceptar compartir los datos de tu diagnóstico para solicitar la sesión.')
+      return
+    }
+
     setEnviando(true)
     setError(null)
 
     const fechaPropuesta = `${fecha} ${hora}`
 
     const resultado = await solicitarSesion({
-      // No hay autenticación: el identificador estable del visitante es el
-      // cliente anónimo que ya usa el servicio de diagnóstico.
-      id_usuario: obtenerClienteAnonimo(),
-      // El proyecto aún no tiene concepto de expediente ni devuelve el id
-      // de la fila de `diagnosticos` (el insert anónimo no puede leerla),
-      // así que viaja nulo hasta que exista.
-      expediente_id: null,
-      cliente_nombre: perfil?.contactoNombre || 'Ana López',
-      cliente_email: perfil?.contactoEmail || 'josgoas@outlook.com',
+      // Con sesión iniciada manda el `user_id` real; sin ella, el cliente
+      // anónimo estable que ya usa el servicio de diagnóstico.
+      id_usuario: userId ?? obtenerClienteAnonimo(),
+      // El expediente es la fila de `diagnosticos` creada al guardar el
+      // cuestionario: permite a n8n escribir la cita en la fila correcta.
+      expediente_id: cargarExpedienteId(),
+      // El nombre de la sesión solo vale si hay sesión: sin ella
+      // `nombreCompleto` es el literal "Invitado", que al ser una cadena no
+      // vacía cortaría el respaldo al perfil y llegaría así al mentor.
+      cliente_nombre: (userId && nombreCompleto) || perfil?.contactoNombre || 'Ana López',
+      cliente_email: emailSesion || perfil?.contactoEmail || 'josgoas@outlook.com',
       fecha_propuesta: fechaPropuesta,
       fase: respuestas?.fase_embudo || 'Tracción',
       score_total: respuestas?.score_total ?? 78,
+      // Queda registrado en el flujo de n8n: es la prueba de que el usuario
+      // autorizó el acceso del mentor a sus métricas.
+      consentimiento_compartir_datos: true,
     })
 
     setEnviando(false)
@@ -196,6 +220,9 @@ export default function SesionEstrategicaCard({ perfil }) {
       estado: 'en_revision',
       fecha_propuesta: fechaPropuesta,
       solicitadaEn: new Date().toISOString(),
+      // Se guarda también en local para poder acreditar cuándo se dio el
+      // consentimiento sin depender de que n8n responda.
+      consentimientoEn: new Date().toISOString(),
     }
     guardarCitaLocal(guardada)
     setCita(normalizarCita(guardada))
@@ -327,11 +354,55 @@ export default function SesionEstrategicaCard({ perfil }) {
         </div>
       </div>
 
+      {/* Consentimiento de tratamiento de datos.
+          Los colores van literales y el texto se renderiza siempre, sin
+          depender del estado del checkbox: un enunciado legal que solo se
+          lee al marcarlo no es un consentimiento informado. */}
+      <div
+        className="mt-5 rounded-xl border p-4"
+        style={{ backgroundColor: '#FFFFFF', borderColor: BORDE }}
+      >
+        <div className="flex items-start gap-2.5">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" style={{ color: VERDE }} aria-hidden="true" />
+          <p className="text-xs leading-relaxed" style={{ color: TEXTO_SUAVE }}>
+            <span className="font-bold" style={{ color: TEXTO }}>
+              Consentimiento de tratamiento de datos para mentoría:
+            </span>{' '}
+            Al agendar esta sesión, autorizas que el mentor asignado acceda a los datos y métricas
+            declarados en tu diagnóstico para el análisis y conducción de la sesión técnica, bajo
+            estricto secreto profesional y política de privacidad.
+          </p>
+        </div>
+
+        <label
+          htmlFor="cita-consentimiento"
+          className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border p-3"
+          style={{ backgroundColor: SUPERFICIE, borderColor: BORDE, colorScheme: 'light' }}
+        >
+          <input
+            id="cita-consentimiento"
+            type="checkbox"
+            checked={consentimiento}
+            onChange={(e) => setConsentimiento(e.target.checked)}
+            disabled={enviando}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded"
+            style={{ accentColor: VERDE, colorScheme: 'light' }}
+          />
+          <span
+            className="select-none text-xs font-semibold leading-relaxed"
+            style={{ color: TEXTO, WebkitTextFillColor: TEXTO, opacity: 1 }}
+          >
+            Acepto compartir los datos de mi diagnóstico con el equipo de mentoría asignado.
+          </span>
+        </label>
+      </div>
+
       <button
         type="button"
         onClick={enviar}
-        disabled={enviando || !hayWebhookCita || !fecha}
-        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        disabled={enviando || !hayWebhookCita || !fecha || !consentimiento}
+        title={consentimiento ? undefined : 'Acepta el consentimiento para poder solicitar la sesión'}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
         style={{ backgroundColor: VERDE }}
       >
         {enviando ? (

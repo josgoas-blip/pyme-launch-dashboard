@@ -12,7 +12,8 @@
  *
  * Contrato con n8n:
  *   POST  { id_usuario, expediente_id, cliente_nombre, cliente_email,
- *           fecha_propuesta, fase, score_total }
+ *           fecha_propuesta, fase, score_total,
+ *           consentimiento_compartir_datos }
  *   2xx   solicitud registrada (el cuerpo puede venir vacío)
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
@@ -50,6 +51,7 @@ const TIEMPO_MAXIMO_MS = 15000
  *   fecha_propuesta: string,
  *   fase: string,
  *   score_total: number,
+ *   consentimiento_compartir_datos: boolean,
  * }} solicitud
  * @returns {Promise<{ ok: boolean, motivo?: string }>}
  */
