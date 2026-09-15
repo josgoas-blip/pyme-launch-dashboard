@@ -43,7 +43,7 @@ const VISTAS_POR_PESTANA = {
  * el panel en vez de mandar a repetir las 20 preguntas.
  */
 function Enrutador() {
-  const { userId, email, cargando: cargandoSesion, authDisponible } = useAuth()
+  const { userId, nombreCompleto, cargando: cargandoSesion, authDisponible } = useAuth()
 
   /** Diagnóstico activo. `null` = aún no completado. */
   const [respuestas, setRespuestas] = useState(cargarDiagnosticoLocal)
@@ -150,7 +150,7 @@ function Enrutador() {
       {/* La aplicación se oculta al imprimir: el PDF solo lleva el informe.
           Por eso el informe se monta fuera de este árbol. */}
       <div className="no-imprimir">
-        <AppLayout nombreUsuario={email ?? 'Invitado'}>
+        <AppLayout nombreUsuario={nombreCompleto}>
           {(activeTab) => {
             const Vista = VISTAS_POR_PESTANA[activeTab]
             return <Vista />

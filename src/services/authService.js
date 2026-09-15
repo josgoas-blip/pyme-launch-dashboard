@@ -88,7 +88,14 @@ export function traducirErrorAuth(error) {
  * @param {{ email: string, password: string }} credenciales
  * @returns {string|null} Mensaje de error, o `null` si es válido.
  */
-export function validarCredenciales({ email, password }) {
+export function validarCredenciales({ email, password, nombre, apellidos, esRegistro = false }) {
+  // Nombre y apellidos se validan primero porque son los primeros campos
+  // del formulario: señalar un error de correo por encima de un nombre
+  // vacío haría al usuario corregir en orden inverso al que lee.
+  if (esRegistro) {
+    if (!nombre?.trim()) return 'Escribe tu nombre.'
+    if (!apellidos?.trim()) return 'Escribe tus apellidos.'
+  }
   if (!email?.trim()) return 'Escribe tu correo electrónico.'
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return 'El correo no tiene un formato válido.'
   if (!password) return 'Escribe tu contraseña.'
@@ -96,6 +103,55 @@ export function validarCredenciales({ email, password }) {
     return `La contraseña debe tener al menos ${LONGITUD_MINIMA_PASSWORD} caracteres.`
   }
   return null
+}
+
+/**
+ * Nombre completo legible a partir de las dos fuentes posibles.
+ *
+ * Prioridad: la fila de `profiles`, que es el dato editable del producto, y
+ * después `user_metadata`, que es lo que quedó grabado en el registro. Si
+ * no hubiera ninguno se devuelve el correo: es preferible a un saludo
+ * vacío o a un "undefined".
+ *
+ * @param {{ nombre?: string, apellidos?: string }|null} perfil
+ * @param {{ user_metadata?: Record<string, unknown>, email?: string }|null} usuario
+ * @returns {string}
+ */
+export function componerNombreCompleto(perfil, usuario) {
+  const meta = usuario?.user_metadata ?? {}
+
+  const nombre = (perfil?.nombre ?? meta.nombre ?? '').trim()
+  const apellidos = (perfil?.apellidos ?? meta.apellidos ?? '').trim()
+
+  const completo = [nombre, apellidos].filter(Boolean).join(' ')
+  return completo || usuario?.email || 'Invitado'
+}
+
+/**
+ * Perfil del usuario en la tabla `profiles`.
+ *
+ * Devuelve `null` ante cualquier problema —tabla sin fila, RLS, red— para
+ * que quien lo llame caiga en `user_metadata` sin tener que distinguir
+ * entre "no hay perfil" y "no se pudo leer".
+ *
+ * @param {string|null} userId
+ * @returns {Promise<{ nombre: string|null, apellidos: string|null, email: string|null }|null>}
+ */
+export async function leerPerfil(userId) {
+  if (!haySupabase || !userId) return null
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, nombre, apellidos, email')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return data
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -130,13 +186,23 @@ export async function iniciarSesion({ email, password }) {
  * @param {{ email: string, password: string }} credenciales
  * @returns {Promise<{ ok: boolean, sesion?: object, requiereConfirmacion?: boolean, motivo?: string }>}
  */
-export async function registrarse({ email, password }) {
+export async function registrarse({ email, password, nombre, apellidos }) {
   if (!haySupabase) return { ok: false, motivo: 'La autenticación no está configurada en esta instalación.' }
 
   try {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
+      // Viajan en `options.data`, que Supabase guarda en
+      // `raw_user_meta_data`. Así el nombre está disponible desde el primer
+      // render aunque la fila de `profiles` aún no exista: el disparador
+      // que la crea puede tardar, o no estar configurado todavía.
+      options: {
+        data: {
+          nombre: nombre?.trim() ?? '',
+          apellidos: apellidos?.trim() ?? '',
+        },
+      },
     })
 
     if (error) return { ok: false, motivo: traducirErrorAuth(error) }

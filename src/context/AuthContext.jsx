@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
+import { leerPerfil, componerNombreCompleto } from '../services/authService.js'
 
 const AuthContext = createContext(null)
 
@@ -23,6 +24,7 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [sesion, setSesion] = useState(null)
   const [cargando, setCargando] = useState(haySupabase)
+  const [perfil, setPerfil] = useState(null)
 
   useEffect(() => {
     if (!haySupabase) return undefined
@@ -52,13 +54,43 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const usuario = sesion?.user ?? null
+  const userId = usuario?.id ?? null
+
+  /**
+   * Perfil de `profiles`, para saludar con el nombre editable del producto
+   * y no con el que quedó grabado en el registro.
+   *
+   * No bloquea la carga de la aplicación: mientras llega, el saludo usa
+   * `user_metadata`, que viene con la propia sesión. Si la fila no existe
+   * —el disparador que la crea puede no estar configurado— se queda en
+   * `null` y el respaldo sigue funcionando.
+   */
+  useEffect(() => {
+    if (!userId) {
+      setPerfil(null)
+      return undefined
+    }
+
+    let vigente = true
+    leerPerfil(userId).then((datos) => {
+      if (vigente) setPerfil(datos)
+    })
+
+    return () => {
+      vigente = false
+    }
+  }, [userId])
+
   return (
     <AuthContext.Provider
       value={{
         sesion,
-        usuario: sesion?.user ?? null,
-        userId: sesion?.user?.id ?? null,
-        email: sesion?.user?.email ?? null,
+        usuario,
+        userId,
+        email: usuario?.email ?? null,
+        perfil,
+        nombreCompleto: componerNombreCompleto(perfil, usuario),
         cargando,
         authDisponible: haySupabase,
       }}
@@ -82,6 +114,8 @@ export function useAuth() {
       usuario: null,
       userId: null,
       email: null,
+      perfil: null,
+      nombreCompleto: 'Invitado',
       cargando: false,
       authDisponible: false,
     }

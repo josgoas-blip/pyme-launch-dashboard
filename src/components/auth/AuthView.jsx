@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Mail, Lock, Loader2, AlertTriangle, MailCheck, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, Loader2, AlertTriangle, MailCheck, Eye, EyeOff, User, Users } from 'lucide-react'
 import {
   iniciarSesion,
   registrarse,
@@ -26,6 +26,8 @@ const TEXTO_SUAVE = '#4B5563'
  */
 export default function AuthView() {
   const [modo, setModo] = useState('login') // 'login' | 'registro'
+  const [nombre, setNombre] = useState('')
+  const [apellidos, setApellidos] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [verPassword, setVerPassword] = useState(false)
@@ -49,7 +51,7 @@ export default function AuthView() {
     setAviso(null)
 
     // Validación local primero: responde al instante y ahorra el viaje.
-    const problema = validarCredenciales({ email, password })
+    const problema = validarCredenciales({ email, password, nombre, apellidos, esRegistro })
     if (problema) {
       setError(problema)
       return
@@ -57,7 +59,7 @@ export default function AuthView() {
 
     setEnviando(true)
     const resultado = esRegistro
-      ? await registrarse({ email, password })
+      ? await registrarse({ email, password, nombre, apellidos })
       : await iniciarSesion({ email, password })
     setEnviando(false)
 
@@ -133,6 +135,60 @@ export default function AuthView() {
           </div>
 
           <form onSubmit={enviar} noValidate className="space-y-4">
+            {/* Nombre y apellidos solo al crear cuenta: en el inicio de
+                sesión sobran y alargarían el formulario sin aportar nada. */}
+            {esRegistro && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="auth-nombre" className="text-xs font-semibold uppercase tracking-wider" style={{ color: TEXTO_SUAVE }}>
+                    Nombre
+                  </label>
+                  <div className="relative mt-1.5">
+                    <User
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                      style={{ color: TEXTO_SUAVE }}
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="auth-nombre"
+                      type="text"
+                      value={nombre}
+                      onChange={(e) => setNombre(e.target.value)}
+                      autoComplete="given-name"
+                      disabled={enviando}
+                      placeholder="Ana"
+                      className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#1B4D3E] disabled:opacity-60"
+                      style={{ borderColor: BORDE, color: TEXTO }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="auth-apellidos" className="text-xs font-semibold uppercase tracking-wider" style={{ color: TEXTO_SUAVE }}>
+                    Apellidos
+                  </label>
+                  <div className="relative mt-1.5">
+                    <Users
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                      style={{ color: TEXTO_SUAVE }}
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="auth-apellidos"
+                      type="text"
+                      value={apellidos}
+                      onChange={(e) => setApellidos(e.target.value)}
+                      autoComplete="family-name"
+                      disabled={enviando}
+                      placeholder="López García"
+                      className="w-full rounded-lg border py-2.5 pl-9 pr-3 text-sm outline-none transition-colors focus:border-[#1B4D3E] disabled:opacity-60"
+                      style={{ borderColor: BORDE, color: TEXTO }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <label htmlFor="auth-email" className="text-xs font-semibold uppercase tracking-wider" style={{ color: TEXTO_SUAVE }}>
                 Correo electrónico
