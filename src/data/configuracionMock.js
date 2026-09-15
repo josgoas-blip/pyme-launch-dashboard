@@ -13,11 +13,8 @@ export const perfilCliente = {
   sector: 'Servicios de traducción e interpretación',
   categoriaSector: 'B2B Servicios',
   tamano: '1-10 empleados',
-  fechaAlta: '15/01/2026',
   contactoNombre: 'Ana López',
   contactoEmail: 'asequible.translation@gmail.com',
-  mentorPrincipal: { nombre: 'Carlos Ruiz', especialidad: 'Estrategia y Finanzas' },
-  coMentor: { nombre: 'Laura Gómez', especialidad: 'Marketing Digital' },
 }
 
 /**

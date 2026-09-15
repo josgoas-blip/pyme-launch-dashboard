@@ -1,13 +1,14 @@
 /**
- * Servicio del equipo de mentoría asignado.
+ * Servicio de la ficha del expediente: equipo de mentoría y fecha de alta.
  *
- * Lee de `diagnosticos` los dos mentores del expediente mediante el join
- * incrustado de PostgREST sobre las claves foráneas `mentor_principal_id` y
- * `comentor_id`, que apuntan a la tabla `mentores`.
+ * Ambos datos viven en la misma fila de `diagnosticos`, así que se leen en
+ * una sola consulta. Los mentores llegan por el join incrustado de
+ * PostgREST sobre las claves foráneas `mentor_principal_id` y
+ * `comentor_id`; la fecha de alta es el `completado_en` de la fila.
  *
  * Igual que el resto de servicios del proyecto, nunca lanza: devuelve
- * `null` cuando no hay nada que mostrar, y la tarjeta se queda con su
- * estado "Por asignar" en lugar de romperse.
+ * `null` cuando no hay nada que mostrar, y la tarjeta se queda con sus
+ * valores de reserva en lugar de romperse.
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo } from './diagnosticoService.js'
@@ -20,8 +21,9 @@ import { filaDelVisitante } from '../utils/citaDiagnostico.js'
  * tarjeta; `email` queda fuera a propósito, porque no se muestra y es un
  * dato de contacto que no hace falta exponer al navegador.
  */
-const SELECT_MENTORES = `
+const SELECT_FICHA = `
   id,
+  completado_en,
   respuestas,
   mentor_principal:mentor_principal_id (id, nombre, especialidad, avatar_url),
   comentor:comentor_id (id, nombre, especialidad, avatar_url)
@@ -37,6 +39,14 @@ const LIMITE_RASTREO = 100
  * @property {string} nombre
  * @property {string|null} especialidad
  * @property {string|null} avatarUrl
+ */
+
+/**
+ * Ficha del expediente.
+ * @typedef {Object} FichaExpediente
+ * @property {Mentor|null} principal
+ * @property {Mentor|null} coMentor
+ * @property {Date|null} altaEn - Fecha de alta (el `completado_en` de la fila).
  */
 
 /**
@@ -66,43 +76,59 @@ export function normalizarMentor(crudo) {
   }
 }
 
-/** Extrae la pareja de mentores de una fila ya consultada. */
-function mentoresDeFila(fila) {
-  const principal = normalizarMentor(fila?.mentor_principal)
-  const coMentor = normalizarMentor(fila?.comentor)
+/**
+ * Convierte a `Date` la marca temporal de la fila, tolerando los dos
+ * nombres de columna habituales.
+ *
+ * @param {Record<string, unknown>|null} fila
+ * @returns {Date|null}
+ */
+export function fechaDeAlta(fila) {
+  const bruto = fila?.completado_en ?? fila?.created_at
+  if (!bruto) return null
 
-  // Sin ninguno de los dos, la fila no aporta: así el rastreo sigue
-  // buscando en las siguientes en vez de detenerse en una fila vacía.
-  if (!principal && !coMentor) return null
-  return { principal, coMentor }
+  const fecha = new Date(bruto)
+  return Number.isFinite(fecha.getTime()) ? fecha : null
+}
+
+/** Ficha a partir de una fila ya consultada. */
+function fichaDeFila(fila) {
+  return {
+    principal: normalizarMentor(fila?.mentor_principal),
+    coMentor: normalizarMentor(fila?.comentor),
+    altaEn: fechaDeAlta(fila),
+  }
 }
 
 /**
- * Equipo de mentoría del expediente.
+ * Ficha del expediente de este visitante.
  *
  * Dos caminos, los mismos que usa la lectura de la cita: primero el
- * expediente guardado al crear el diagnóstico y, si ese no tiene mentores,
- * un rastreo acotado de las filas de este visitante.
+ * expediente guardado al crear el diagnóstico y, si no lo hay, un rastreo
+ * acotado de las filas de este visitante.
+ *
+ * En el rastreo, el alta es la fila **más antigua** del visitante —que es
+ * cuando se dio de alta— y los mentores, los de la primera fila que los
+ * tenga asignados. Pueden ser filas distintas: n8n crea filas nuevas al
+ * agendar, así que la más reciente no tiene por qué ser la del alta.
  *
  * @param {string|null} [expedienteId]
- * @returns {Promise<{ principal: Mentor|null, coMentor: Mentor|null }|null>}
- *   `null` si no hay mentores asignados o no se pudo leer.
+ * @returns {Promise<FichaExpediente|null>} `null` si no se pudo leer nada.
  */
-export async function leerMentoresRemotos(expedienteId = cargarExpedienteId()) {
+export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
   if (!haySupabase) return null
 
   try {
+    // 1. El expediente es la fila del propio diagnóstico: su fecha es el
+    //    alta, tenga o no mentores asignados todavía.
     if (expedienteId) {
       const { data, error } = await supabase
         .from('diagnosticos')
-        .select(SELECT_MENTORES)
+        .select(SELECT_FICHA)
         .eq('id', expedienteId)
         .single()
 
-      if (!error && data) {
-        const mentores = mentoresDeFila(data)
-        if (mentores) return mentores
-      }
+      if (!error && data) return fichaDeFila(data)
     }
 
     const clienteAnonimo = obtenerClienteAnonimo()
@@ -110,24 +136,27 @@ export async function leerMentoresRemotos(expedienteId = cargarExpedienteId()) {
 
     const { data, error } = await supabase
       .from('diagnosticos')
-      .select(SELECT_MENTORES)
+      .select(SELECT_FICHA)
       .order('completado_en', { ascending: false })
       .limit(LIMITE_RASTREO)
 
     if (error || !data?.length) return null
 
     // Solo filas del propio visitante: sin esta comprobación la tarjeta
-    // podría anunciar el mentor asignado a otra persona.
-    for (const fila of data) {
-      if (!filaDelVisitante(fila, clienteAnonimo)) continue
+    // podría anunciar el mentor o el alta de otra persona.
+    const propias = data.filter((fila) => filaDelVisitante(fila, clienteAnonimo))
+    if (propias.length === 0) return null
 
-      const mentores = mentoresDeFila(fila)
-      if (mentores) return mentores
+    const conMentores = propias.find((fila) => fila.mentor_principal || fila.comentor)
+    // Vienen ordenadas de más reciente a más antigua: la última es el alta.
+    const masAntigua = propias[propias.length - 1]
+
+    return {
+      ...fichaDeFila(conMentores ?? masAntigua),
+      altaEn: fechaDeAlta(masAntigua),
     }
-
-    return null
   } catch {
-    // Sin red o sin permiso de lectura: la tarjeta muestra "Por asignar".
+    // Sin red o sin permiso de lectura: la tarjeta usa sus reservas.
     return null
   }
 }

@@ -10,7 +10,7 @@ import { UserRound } from 'lucide-react'
  *
  * @param {{
  *   rotulo: string,
- *   mentor: import('../../services/mentoresService.js').Mentor | null,
+ *   mentor: import('../../services/expedienteService.js').Mentor | null,
  *   cargando?: boolean,
  *   tono?: 'primario' | 'secundario',
  * }} props

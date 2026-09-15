@@ -1,14 +1,10 @@
 /**
  * Tipos (JSDoc) de la pestaña "Configuración" — Pyme Launch Dashboard.
  * Contrato entre los mocks (src/data/configuracionMock.js) y los componentes
- * visuales de src/components/dashboard/ (Fase 4 del plan maestro).
- */
-
-/**
- * Un mentor asignado (Principal o Co-Mentor).
- * @typedef {Object} Mentor
- * @property {string} nombre
- * @property {string} especialidad
+ * visuales de src/components/dashboard/.
+ *
+ * El equipo de mentoría ya no se tipa aquí: llega de Supabase y lo describe
+ * `Mentor` en src/services/expedienteService.js.
  */
 
 /**
@@ -19,11 +15,8 @@
  * @property {string} sector - Descripción del sector de actividad.
  * @property {string} categoriaSector - Clasificación breve, p.ej. "B2B Servicios".
  * @property {string} tamano - p.ej. "1-10 empleados".
- * @property {string} fechaAlta
  * @property {string} contactoNombre
  * @property {string} contactoEmail
- * @property {Mentor} mentorPrincipal
- * @property {Mentor} coMentor
  */
 
 /**

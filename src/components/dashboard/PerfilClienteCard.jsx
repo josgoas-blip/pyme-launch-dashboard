@@ -2,7 +2,38 @@ import { useEffect, useState } from 'react'
 import { Building2, Mail, User, IdCard, Pencil, Check, X } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
 import TarjetaMentor from './TarjetaMentor.jsx'
-import { leerMentoresRemotos } from '../../services/mentoresService.js'
+import { leerFichaExpediente } from '../../services/expedienteService.js'
+import { useOnboarding } from '../../context/OnboardingContext.jsx'
+
+const FORMATO_ALTA = new Intl.DateTimeFormat('es-ES', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'Europe/Madrid',
+})
+
+/**
+ * Fecha de alta en formato español, con una cadena de reservas.
+ *
+ * Prioridad: el `completado_en` de la fila de Supabase, la marca que el
+ * cuestionario dejó en el diagnóstico guardado y, si no hubiera ninguna, la
+ * fecha de hoy. Así la línea nunca queda vacía ni muestra "Invalid Date".
+ *
+ * @param {Date|null|undefined} altaRemota
+ * @param {Record<string, unknown>|null} respuestas
+ * @returns {string}
+ */
+function formatearAlta(altaRemota, respuestas) {
+  const candidatos = [altaRemota, respuestas?.meta?.completadoEn, new Date()]
+
+  for (const candidato of candidatos) {
+    if (!candidato) continue
+    const fecha = candidato instanceof Date ? candidato : new Date(candidato)
+    if (Number.isFinite(fecha.getTime())) return FORMATO_ALTA.format(fecha)
+  }
+
+  return FORMATO_ALTA.format(new Date())
+}
 
 /**
  * Cuadrante "Perfil del Emprendedor & Ficha Identificativa": tarjeta
@@ -22,20 +53,21 @@ import { leerMentoresRemotos } from '../../services/mentoresService.js'
 export default function PerfilClienteCard({ perfilCliente }) {
   const [editando, setEditando] = useState(false)
   const [borrador, setBorrador] = useState(perfilCliente)
-  const [mentores, setMentores] = useState(null)
-  const [cargandoMentores, setCargandoMentores] = useState(true)
+  const { respuestas } = useOnboarding()
+  const [ficha, setFicha] = useState(null)
+  const [cargandoFicha, setCargandoFicha] = useState(true)
 
   // Se revalida en cada montaje, que es al entrar en Configuración: la
-  // asignación la hace el equipo mientras el usuario usa el panel.
+  // asignación de mentores la hace el equipo mientras el usuario usa el panel.
   useEffect(() => {
     let vigente = true
 
-    leerMentoresRemotos()
-      .then((equipo) => {
-        if (vigente) setMentores(equipo)
+    leerFichaExpediente()
+      .then((datos) => {
+        if (vigente) setFicha(datos)
       })
       .finally(() => {
-        if (vigente) setCargandoMentores(false)
+        if (vigente) setCargandoFicha(false)
       })
 
     return () => {
@@ -60,7 +92,8 @@ export default function PerfilClienteCard({ perfilCliente }) {
 
   const actualizarCampo = (campo) => (e) => setBorrador((b) => ({ ...b, [campo]: e.target.value }))
 
-  const { categoriaSector, tamano, fechaAlta } = perfilCliente
+  const { categoriaSector, tamano } = perfilCliente
+  const fechaAlta = formatearAlta(ficha?.altaEn, respuestas)
 
   return (
     <Card>
@@ -183,14 +216,14 @@ export default function PerfilClienteCard({ perfilCliente }) {
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TarjetaMentor
             rotulo="Mentor Principal"
-            mentor={mentores?.principal ?? null}
-            cargando={cargandoMentores}
+            mentor={ficha?.principal ?? null}
+            cargando={cargandoFicha}
             tono="primario"
           />
           <TarjetaMentor
             rotulo="Co-Mentor"
-            mentor={mentores?.coMentor ?? null}
-            cargando={cargandoMentores}
+            mentor={ficha?.coMentor ?? null}
+            cargando={cargandoFicha}
             tono="secundario"
           />
         </div>
