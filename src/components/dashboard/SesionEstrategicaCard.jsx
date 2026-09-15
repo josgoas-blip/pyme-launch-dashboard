@@ -6,6 +6,7 @@ import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 import { cargarCitaLocal, guardarCitaLocal } from '../../utils/persistenciaCita.js'
 import { cargarExpedienteId } from '../../utils/persistenciaDiagnostico.js'
 import { useAuth } from '../../context/AuthContext.jsx'
+import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
 import { ESTADO_CITA, normalizarCita, formatearFechaCita } from '../../utils/citaDiagnostico.js'
 
 /* Paleta de la tarjeta (Pyme Launch). Se aplican como valores literales
@@ -120,6 +121,7 @@ function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono =
 export default function SesionEstrategicaCard({ perfil }) {
   const { respuestas } = useOnboarding()
   const { userId, nombreCompleto, email: emailSesion } = useAuth()
+  const { soloLectura } = useModoLectura()
 
   const dias = proximosDiasHabiles()
   const [fecha, setFecha] = useState(dias[0]?.iso ?? '')
@@ -135,10 +137,16 @@ export default function SesionEstrategicaCard({ perfil }) {
    */
   const [consentimiento, setConsentimiento] = useState(false)
 
-  // La cita del diagnóstico manda; si no la hay, la copia local. Ambas se
-  // normalizan, así que la vista trabaja siempre con la misma forma.
+  /**
+   * La cita del diagnóstico manda; si no la hay, la copia local.
+   *
+   * En Modo Consultor no se mira la copia local: ese `localStorage` es el
+   * del navegador del mentor y contendría su propia cita, no la del
+   * expediente que está revisando. Ahí solo vale lo que venga en el
+   * expediente cargado desde Supabase.
+   */
   const [cita, setCita] = useState(
-    () => normalizarCita(respuestas?.cita) ?? normalizarCita(cargarCitaLocal()),
+    () => normalizarCita(respuestas?.cita) ?? (soloLectura ? null : normalizarCita(cargarCitaLocal())),
   )
 
   /**
@@ -154,6 +162,11 @@ export default function SesionEstrategicaCard({ perfil }) {
    * "en revisión" si una lectura posterior falla o se queda sin red.
    */
   useEffect(() => {
+    // En Modo Consultor no se revalida: la cita ya viene en el expediente
+    // cargado, y `leerCitaRemota` rastrearía por la identidad del mentor,
+    // que devolvería la cita equivocada o ninguna.
+    if (soloLectura) return undefined
+
     let vigente = true
 
     leerCitaRemota().then((remota) => {
@@ -173,7 +186,7 @@ export default function SesionEstrategicaCard({ perfil }) {
     return () => {
       vigente = false
     }
-  }, [])
+  }, [soloLectura])
 
   const enviar = async () => {
     // Segunda barrera además del botón deshabilitado: el estado podría
@@ -296,6 +309,22 @@ export default function SesionEstrategicaCard({ perfil }) {
   }
 
   // ── Sin solicitar ───────────────────────────────────────────────────
+
+  // En Modo Consultor no se ofrece el formulario: el mentor no puede pedir
+  // una sesión en nombre del cliente. Se le informa del estado, que es lo
+  // que necesita saber al preparar la reunión.
+  if (soloLectura) {
+    return (
+      <Bloque fondo={SUPERFICIE}>
+        <Cabecera>Sesión de mentoría</Cabecera>
+        <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
+          Este emprendedor todavía no ha solicitado su sesión estratégica. La solicitud parte
+          siempre del cliente desde su propio panel.
+        </p>
+      </Bloque>
+    )
+  }
+
   return (
     <Bloque fondo={SUPERFICIE}>
       <Cabecera>

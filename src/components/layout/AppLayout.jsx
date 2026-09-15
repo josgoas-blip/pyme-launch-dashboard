@@ -4,6 +4,7 @@ import TopBar from './TopBar.jsx'
 import { TABS } from './TabNav.jsx'
 import AgenteConsultorFlotante from '../chat/AgenteConsultorFlotante.jsx'
 import { NavegacionProvider } from '../../context/NavegacionContext.jsx'
+import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
 
 /**
  * Cascarón del Dashboard con el patrón habitual de un SaaS analítico:
@@ -28,6 +29,7 @@ import { NavegacionProvider } from '../../context/NavegacionContext.jsx'
 export default function AppLayout({ nombreUsuario, children }) {
   const [activeTab, setActiveTab] = useState(TABS[0].id)
   const [menuAbierto, setMenuAbierto] = useState(false)
+  const { soloLectura } = useModoLectura()
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -47,8 +49,10 @@ export default function AppLayout({ nombreUsuario, children }) {
         </main>
       </div>
 
-      {/* Consultor IA flotante: disponible en las 5 pestañas */}
-      <AgenteConsultorFlotante />
+      {/* Consultor IA flotante: disponible en las 5 pestañas. En Modo
+          Consultor se oculta: los créditos y el historial de chat son del
+          cliente, no del mentor que revisa su expediente. */}
+      {!soloLectura && <AgenteConsultorFlotante />}
     </div>
   )
 }

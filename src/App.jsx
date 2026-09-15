@@ -22,6 +22,11 @@ import {
 } from './utils/persistenciaDiagnostico.js'
 import { borrarHitosCompletados } from './utils/persistenciaHitos.js'
 import { borrarCitaLocal } from './utils/persistenciaCita.js'
+import { leerParametrosConsultor } from './utils/modoConsultor.js'
+import { cargarExpedienteConsultor } from './services/consultorService.js'
+import { ModoLecturaProvider } from './context/ModoLecturaContext.jsx'
+import BannerConsultor from './components/consultor/BannerConsultor.jsx'
+import EnlaceNoValido from './components/consultor/EnlaceNoValido.jsx'
 
 const VISTAS_POR_PESTANA = {
   inicio: InicioView,
@@ -32,18 +37,75 @@ const VISTAS_POR_PESTANA = {
 }
 
 /**
- * Enrutado de la aplicación, con tres destinos posibles:
+ * Panel en Modo Consultor: el expediente de un cliente, en solo lectura.
  *
- *   1. Sin sesión                  → pantalla de acceso.
- *   2. Con sesión y sin diagnóstico → cuestionario (primera vez).
- *   3. Con sesión y con diagnóstico → panel de control.
- *
- * El diagnóstico se busca primero en este navegador y, si no está, en
- * Supabase por `user_id`: así una sesión iniciada en otro equipo recupera
- * el panel en vez de mandar a repetir las 20 preguntas.
+ * Se resuelve antes que la barrera de autenticación porque el mentor entra
+ * por un enlace y no tiene cuenta en el producto. Las cinco pestañas son
+ * las mismas que ve el cliente —el mentor necesita las métricas completas
+ * para conducir la sesión—; lo que cambia es que `ModoLecturaProvider`
+ * marca el árbol y cada componente esconde sus acciones.
  */
+function PanelConsultor({ expedienteId, token }) {
+  const [estado, setEstado] = useState({ cargando: true })
+
+  useEffect(() => {
+    let vigente = true
+
+    cargarExpedienteConsultor(expedienteId, token).then((resultado) => {
+      if (vigente) setEstado({ cargando: false, resultado })
+    })
+
+    return () => {
+      vigente = false
+    }
+  }, [expedienteId, token])
+
+  if (estado.cargando) return <PantallaCargando mensaje="Cargando el expediente…" />
+
+  if (!estado.resultado?.ok) {
+    return <EnlaceNoValido motivo={estado.resultado?.motivo} expedienteId={expedienteId} />
+  }
+
+  const { id, respuestas, nombreCliente } = estado.resultado.expediente
+
+  return (
+    <ModoLecturaProvider expedienteId={id} nombreCliente={nombreCliente}>
+      {/* El mentor entra con acceso total: el selector de plan está oculto
+          en solo lectura, y sin esto se quedaría en 'report' y no podría
+          abrir Viabilidad ni Estrategia, que es justo lo que necesita para
+          conducir la sesión. Este proveedor anida sobre el de App y gana. */}
+      <PlanProvider planInicial="total">
+        {/* `onReiniciar` es una función vacía: en solo lectura no hay nada
+            que reiniciar, y el botón que la usaba está oculto. */}
+        <OnboardingProvider respuestas={respuestas} onReiniciar={() => {}}>
+          <div className="no-imprimir">
+            <BannerConsultor />
+            <AppLayout nombreUsuario={nombreCliente}>
+              {(activeTab) => {
+                const Vista = VISTAS_POR_PESTANA[activeTab]
+                return <Vista />
+              }}
+            </AppLayout>
+          </div>
+
+          <InformeEjecutivo respuestas={respuestas} />
+        </OnboardingProvider>
+      </PlanProvider>
+    </ModoLecturaProvider>
+  )
+}
+
 function Enrutador() {
   const { userId, nombreCompleto, cargando: cargandoSesion, authDisponible } = useAuth()
+
+  /**
+   * Parámetros del enlace de consultoría.
+   *
+   * Se leen una sola vez: la URL no cambia mientras el panel está abierto,
+   * y releerla en cada render obligaría a memorizar el resultado para no
+   * disparar el efecto de carga sin parar.
+   */
+  const [paramsConsultor] = useState(leerParametrosConsultor)
 
   /** Diagnóstico activo. `null` = aún no completado. */
   const [respuestas, setRespuestas] = useState(cargarDiagnosticoLocal)
@@ -123,6 +185,17 @@ function Enrutador() {
     borrarCitaLocal()
     borrarExpedienteId()
     setRespuestas(null)
+  }
+
+  // El Modo Consultor se resuelve antes que todo lo demás: el mentor llega
+  // por enlace, sin cuenta, y no debe toparse con la pantalla de acceso.
+  if (paramsConsultor.activo) {
+    return (
+      <PanelConsultor
+        expedienteId={paramsConsultor.expedienteId}
+        token={paramsConsultor.token}
+      />
+    )
   }
 
   // Recuperando la sesión guardada, o buscando el diagnóstico del usuario.

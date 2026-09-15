@@ -4,6 +4,7 @@ import { Card, CardTitle, Badge } from '../ui/Card.jsx'
 import TarjetaMentor from './TarjetaMentor.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
+import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
 
 const FORMATO_ALTA = new Intl.DateTimeFormat('es-ES', {
   day: '2-digit',
@@ -54,6 +55,7 @@ export default function PerfilClienteCard({ perfilCliente }) {
   const [editando, setEditando] = useState(false)
   const [borrador, setBorrador] = useState(perfilCliente)
   const { respuestas } = useOnboarding()
+  const { soloLectura, expedienteId } = useModoLectura()
   const [ficha, setFicha] = useState(null)
   const [cargandoFicha, setCargandoFicha] = useState(true)
 
@@ -62,7 +64,10 @@ export default function PerfilClienteCard({ perfilCliente }) {
   useEffect(() => {
     let vigente = true
 
-    leerFichaExpediente()
+    // En Modo Consultor se consulta el expediente del enlace: sin pasarlo,
+    // el servicio caeria en el expediente guardado en el navegador del
+    // mentor y mostraria su ficha en lugar de la del cliente.
+    leerFichaExpediente(soloLectura ? expedienteId : undefined)
       .then((datos) => {
         if (vigente) setFicha(datos)
       })
@@ -73,7 +78,7 @@ export default function PerfilClienteCard({ perfilCliente }) {
     return () => {
       vigente = false
     }
-  }, [])
+  }, [soloLectura, expedienteId])
 
   const iniciarEdicion = () => {
     setBorrador(perfilCliente)
@@ -99,7 +104,7 @@ export default function PerfilClienteCard({ perfilCliente }) {
     <Card>
       <div className="flex items-center justify-between">
         <CardTitle>Perfil del Emprendedor</CardTitle>
-        {!editando ? (
+        {soloLectura ? null : !editando ? (
           <button
             type="button"
             onClick={iniciarEdicion}
