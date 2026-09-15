@@ -1,20 +1,47 @@
-import { useState } from 'react'
-import { Building2, Mail, User, IdCard, Pencil, Check, X, UserRound } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Building2, Mail, User, IdCard, Pencil, Check, X } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
+import TarjetaMentor from './TarjetaMentor.jsx'
+import { leerMentoresRemotos } from '../../services/mentoresService.js'
 
 /**
  * Cuadrante "Perfil del Emprendedor & Ficha Identificativa": tarjeta
  * interactiva con edición de los datos básicos del emprendedor y la ficha
  * (solo lectura) del equipo de mentoría asignado.
  *
- * La edición es local al componente (no persiste): la escritura real en
- * Supabase se conectará en la Fase 5 del plan maestro.
+ * El equipo de mentoría sale de Supabase: se leen las relaciones
+ * `mentor_principal_id` y `comentor_id` del expediente. Mientras no estén
+ * asignadas, las fichas muestran "Por asignar".
+ *
+ * La edición de los datos del emprendedor sigue siendo local al componente
+ * (no persiste): la escritura real en Supabase se conectará en la Fase 5
+ * del plan maestro.
  *
  * @param {{ perfilCliente: import('../../types/configuracion.js').PerfilCliente }} props
  */
 export default function PerfilClienteCard({ perfilCliente }) {
   const [editando, setEditando] = useState(false)
   const [borrador, setBorrador] = useState(perfilCliente)
+  const [mentores, setMentores] = useState(null)
+  const [cargandoMentores, setCargandoMentores] = useState(true)
+
+  // Se revalida en cada montaje, que es al entrar en Configuración: la
+  // asignación la hace el equipo mientras el usuario usa el panel.
+  useEffect(() => {
+    let vigente = true
+
+    leerMentoresRemotos()
+      .then((equipo) => {
+        if (vigente) setMentores(equipo)
+      })
+      .finally(() => {
+        if (vigente) setCargandoMentores(false)
+      })
+
+    return () => {
+      vigente = false
+    }
+  }, [])
 
   const iniciarEdicion = () => {
     setBorrador(perfilCliente)
@@ -33,7 +60,7 @@ export default function PerfilClienteCard({ perfilCliente }) {
 
   const actualizarCampo = (campo) => (e) => setBorrador((b) => ({ ...b, [campo]: e.target.value }))
 
-  const { mentorPrincipal, coMentor, categoriaSector, tamano, fechaAlta } = perfilCliente
+  const { categoriaSector, tamano, fechaAlta } = perfilCliente
 
   return (
     <Card>
@@ -154,26 +181,18 @@ export default function PerfilClienteCard({ perfilCliente }) {
       <div className="mt-5 border-t border-card-border pt-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted">Equipo de Mentoría Asignado</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex items-center gap-2 rounded-lg border border-card-border bg-canvas p-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <UserRound className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Mentor Principal</p>
-              <p className="truncate text-sm font-bold text-main">{mentorPrincipal.nombre}</p>
-              <p className="truncate text-xs text-muted">{mentorPrincipal.especialidad}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-card-border bg-canvas p-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-green/10 text-accent-green">
-              <UserRound className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Co-Mentor</p>
-              <p className="truncate text-sm font-bold text-main">{coMentor.nombre}</p>
-              <p className="truncate text-xs text-muted">{coMentor.especialidad}</p>
-            </div>
-          </div>
+          <TarjetaMentor
+            rotulo="Mentor Principal"
+            mentor={mentores?.principal ?? null}
+            cargando={cargandoMentores}
+            tono="primario"
+          />
+          <TarjetaMentor
+            rotulo="Co-Mentor"
+            mentor={mentores?.coMentor ?? null}
+            cargando={cargandoMentores}
+            tono="secundario"
+          />
         </div>
         <p className="mt-2 text-[11px] text-muted">Alta: {fechaAlta}</p>
       </div>
