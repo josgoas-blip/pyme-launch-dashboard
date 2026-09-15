@@ -121,6 +121,54 @@ export function normalizarCita(cruda) {
 }
 
 /**
+ * Devuelve el JSON de `respuestas` como objeto.
+ *
+ * La columna llega con dos formas distintas según quién escribiera la
+ * fila: el panel guarda un objeto, y n8n guarda la cadena JSON
+ * serializada. Leer `.cita` sobre una cadena da `undefined` sin error, que
+ * es exactamente lo que hacía que una cita ya confirmada pasara
+ * desapercibida y la tarjeta siguiera en "en revisión".
+ *
+ * @param {unknown} respuestas
+ * @returns {Record<string, unknown>|null}
+ */
+export function parsearRespuestas(respuestas) {
+  if (typeof respuestas === 'string') {
+    try {
+      const objeto = JSON.parse(respuestas)
+      return typeof objeto === 'object' && objeto !== null && !Array.isArray(objeto) ? objeto : null
+    } catch {
+      return null
+    }
+  }
+  if (typeof respuestas === 'object' && respuestas !== null && !Array.isArray(respuestas)) {
+    return respuestas
+  }
+  return null
+}
+
+/**
+ * ¿Esta fila pertenece al visitante indicado?
+ *
+ * Hay dos marcas posibles, según quién creara la fila:
+ *   - `meta.cliente_anonimo`, que estampa el panel al guardar el diagnóstico.
+ *   - `id_usuario`, que es ese mismo identificador viajando en el payload
+ *     del webhook y que n8n copia en la fila que crea al agendar.
+ *
+ * @param {Record<string, unknown>|null} fila
+ * @param {string|null} clienteAnonimo
+ * @returns {boolean}
+ */
+export function filaDelVisitante(fila, clienteAnonimo) {
+  if (!clienteAnonimo) return false
+
+  const respuestas = parsearRespuestas(fila?.respuestas)
+  if (!respuestas) return false
+
+  return respuestas?.meta?.cliente_anonimo === clienteAnonimo || respuestas?.id_usuario === clienteAnonimo
+}
+
+/**
  * Extrae la cita de una fila de `diagnosticos`.
  *
  * Prioridad: el objeto `respuestas.cita`, que es el que trae fecha y
@@ -139,7 +187,11 @@ export function normalizarCita(cruda) {
 export function extraerCitaDeFila(fila) {
   if (!fila) return null
 
-  const desdeObjeto = normalizarCita(fila?.respuestas?.cita ?? fila?.cita)
+  // `respuestas` puede venir como objeto (lo escribe el panel) o como
+  // cadena JSON (lo escribe n8n): se normaliza antes de buscar la cita.
+  const respuestas = parsearRespuestas(fila.respuestas)
+
+  const desdeObjeto = normalizarCita(respuestas?.cita ?? fila.cita)
   if (desdeObjeto) return desdeObjeto
 
   for (const columna of ['estado_cita', 'estado', 'fase_embudo']) {

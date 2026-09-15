@@ -143,3 +143,54 @@ export function borrarDiagnosticoLocal() {
     return false
   }
 }
+
+/**
+ * Clave del identificador de la fila de `diagnosticos` creada al guardar.
+ *
+ * Es el "expediente": permite consultar después esa fila concreta en vez de
+ * rastrear la tabla. Antes no se guardaba porque la política RLS impedía al
+ * visitante anónimo leer la fila recién insertada; con la política pública
+ * de SELECT activa, el insert ya puede devolver su `id`.
+ */
+export const CLAVE_EXPEDIENTE = 'pyme-launch:expediente:v1'
+
+/**
+ * Identificador del expediente de este navegador.
+ *
+ * @returns {string|null} `null` si no hay ninguno guardado.
+ */
+export function cargarExpedienteId() {
+  try {
+    const guardado = localStorage.getItem(CLAVE_EXPEDIENTE)
+    return typeof guardado === 'string' && guardado.trim() ? guardado : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Guarda el identificador del expediente.
+ *
+ * @param {string} id
+ * @returns {boolean} `true` si quedó guardado.
+ */
+export function guardarExpedienteId(id) {
+  if (typeof id !== 'string' || !id.trim()) return false
+
+  try {
+    localStorage.setItem(CLAVE_EXPEDIENTE, id)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Borra el expediente guardado. Lo usa el reinicio del diagnóstico. */
+export function borrarExpedienteId() {
+  try {
+    localStorage.removeItem(CLAVE_EXPEDIENTE)
+    return true
+  } catch {
+    return false
+  }
+}

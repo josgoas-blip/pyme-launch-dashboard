@@ -130,13 +130,35 @@ export default function SesionEstrategicaCard({ perfil }) {
     () => normalizarCita(respuestas?.cita) ?? normalizarCita(cargarCitaLocal()),
   )
 
-  // Intento de lectura remota: si la política RLS lo permite algún día, la
-  // confirmación real de n8n desplaza a la copia local.
+  /**
+   * Revalidación contra Supabase en cada montaje.
+   *
+   * La tarjeta se monta al entrar en Configuración, así que el usuario ve
+   * la confirmación en cuanto vuelve a la pestaña. No se memoriza el
+   * resultado: la aprobación llega mientras el panel está abierto, y
+   * cachear un "todavía no" dejaría la tarjeta congelada en "en revisión".
+   *
+   * Lo remoto manda sobre la copia local, y cuando confirma se escribe
+   * también en el navegador: así la tarjeta ya no puede volver a pintar
+   * "en revisión" si una lectura posterior falla o se queda sin red.
+   */
   useEffect(() => {
     let vigente = true
+
     leerCitaRemota().then((remota) => {
-      if (vigente && remota) setCita(remota)
+      if (!vigente || !remota) return
+
+      setCita(remota)
+
+      if (remota.estado === ESTADO_CITA.CONFIRMADA) {
+        guardarCitaLocal({
+          estado: 'confirmada',
+          fecha: remota.fecha ? remota.fecha.toISOString() : undefined,
+          meet_url: remota.meetUrl ?? undefined,
+        })
+      }
     })
+
     return () => {
       vigente = false
     }

@@ -14,6 +14,7 @@ import {
   cargarDiagnosticoLocal,
   guardarDiagnosticoLocal,
   borrarDiagnosticoLocal,
+  borrarExpedienteId,
 } from './utils/persistenciaDiagnostico.js'
 import { borrarHitosCompletados } from './utils/persistenciaHitos.js'
 import { borrarCitaLocal } from './utils/persistenciaCita.js'
@@ -65,6 +66,7 @@ export default function App() {
     borrarHitosCompletados()
     // La cita pertenece al expediente que se borra.
     borrarCitaLocal()
+    borrarExpedienteId()
     setRespuestasOnboarding(null)
   }
 

@@ -17,7 +17,8 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo } from './diagnosticoService.js'
-import { extraerCitaDeFila } from '../utils/citaDiagnostico.js'
+import { extraerCitaDeFila, filaDelVisitante } from '../utils/citaDiagnostico.js'
+import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
 /**
  * Webhook de agendado.
@@ -86,80 +87,80 @@ export async function solicitarSesion(solicitud) {
  * Columnas que se piden a `diagnosticos` para resolver el estado de la cita.
  *
  * Se seleccionan por nombre y no con `*` para no arrastrar las 22 columnas
- * de variables del modelo en cada sondeo. `estado_cita` y `estado` son
- * opcionales: si no existen en el esquema, Supabase devuelve error y la
- * consulta cae al conjunto mínimo.
+ * de variables del modelo en cada sondeo. No se piden `estado_cita` ni
+ * `estado`: no existen en esta tabla y pedirlas hacía fallar la consulta
+ * entera con un 42703.
  */
-const COLUMNAS_CITA = 'respuestas, fase_embudo, estado_cita, estado'
-const COLUMNAS_CITA_MINIMAS = 'respuestas, fase_embudo'
-
-/** Código de PostgreSQL para "la columna no existe". */
-const COLUMNA_INEXISTENTE = '42703'
+const COLUMNAS_CITA = 'id, respuestas, fase_embudo'
 
 /**
- * ¿Merece la pena pedir las columnas opcionales?
+ * Filas que se revisan cuando no hay expediente guardado.
  *
- * Se apaga en cuanto PostgreSQL responde que no existen. Sin esta memoria,
- * cada visita a Configuración lanzaría una consulta condenada a fallar y
- * dejaría un 400 en la consola del usuario: el esquema no cambia a mitad
- * de sesión, así que basta con preguntarlo una vez.
+ * Es un rastreo acotado, no una consulta ideal: `respuestas` llega unas
+ * veces como objeto y otras como cadena JSON, así que un filtro del lado
+ * del servidor (`respuestas->>id_usuario`) solo encontraría la mitad de
+ * las filas. Se filtra en cliente sobre una ventana reciente. Cuando la
+ * columna tenga un tipo único, esto debería pasar a un `.eq()`.
  */
-let columnasOpcionalesDisponibles = true
+const LIMITE_RASTREO = 100
 
 /**
  * Lee la cita que n8n haya escrito, ya normalizada.
  *
- * Mira primero `respuestas.cita` —que es lo que trae fecha y enlace— y, si
- * no está, las columnas sueltas de la fila.
+ * Dos caminos: el expediente guardado al crear el diagnóstico y, si ese no
+ * tiene cita, un rastreo acotado de las filas de este visitante.
  *
- * Es un intento, no una garantía: la política RLS de `diagnosticos` permite
- * al visitante anónimo insertar pero no seleccionar, así que hoy esta
- * lectura devuelve `null` salvo que haya sesión autenticada. Queda escrita
- * para que la tarjeta refleje la confirmación real en cuanto se active el
- * inicio de sesión o una política de lectura por `cliente_anonimo`.
+ * Se revalida en cada llamada, sin memorizar fallos: la cita aparece
+ * cuando el mentor la aprueba, que es justo mientras el usuario usa el
+ * panel, así que cachear un "no hay" dejaría la tarjeta congelada en "en
+ * revisión" hasta recargar.
  *
+ * @param {string|null} [expedienteId]
  * @returns {Promise<import('../utils/citaDiagnostico.js').CitaNormalizada|null>}
  */
-export async function leerCitaRemota() {
+export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
   if (!haySupabase) return null
 
-  /** Una consulta con el juego de columnas indicado. */
-  const consultar = (columnas) =>
-    supabase.from('diagnosticos').select(columnas).order('id', { ascending: false }).limit(1)
-
   try {
-    const clienteAnonimo = obtenerClienteAnonimo()
+    // 1. Consulta directa al expediente, que es el camino barato y exacto.
+    if (expedienteId) {
+      const { data, error } = await supabase
+        .from('diagnosticos')
+        .select(COLUMNAS_CITA)
+        .eq('id', expedienteId)
+        .single()
 
-    let data = null
-    let error = null
-
-    if (columnasOpcionalesDisponibles) {
-      ;({ data, error } = await consultar(COLUMNAS_CITA))
-
-      // Un esquema sin `estado_cita`/`estado` rechaza la consulta entera:
-      // se anota para no repetirla y se reintenta con lo imprescindible,
-      // que es donde vive de verdad la cita (`respuestas.cita`).
-      if (error?.code === COLUMNA_INEXISTENTE) {
-        columnasOpcionalesDisponibles = false
-        error = null
+      if (!error && data) {
+        const cita = extraerCitaDeFila(data)
+        if (cita) return cita
       }
     }
 
-    if (!columnasOpcionalesDisponibles) {
-      ;({ data, error } = await consultar(COLUMNAS_CITA_MINIMAS))
-    }
+    // 2. Sin expediente, o con un expediente que aún no tiene cita: se
+    //    buscan las filas de este visitante. n8n no actualiza la fila del
+    //    diagnóstico, crea una propia con el payload del webhook, así que
+    //    la cita suele estar en una fila distinta a la del expediente.
+    const clienteAnonimo = obtenerClienteAnonimo()
+    if (!clienteAnonimo) return null
 
-    // Sin permiso de lectura, la política RLS no da error: devuelve cero
-    // filas. Ambos casos acaban igual, en la copia local.
+    const { data, error } = await supabase
+      .from('diagnosticos')
+      .select(COLUMNAS_CITA)
+      .order('completado_en', { ascending: false })
+      .limit(LIMITE_RASTREO)
+
     if (error || !data?.length) return null
 
-    const fila = data[0]
+    // Solo filas del propio visitante: sin esta comprobación el panel
+    // podría anunciar la sesión de otra persona.
+    for (const fila of data) {
+      if (!filaDelVisitante(fila, clienteAnonimo)) continue
 
-    // Con varias filas por navegador, solo vale la del propio visitante.
-    const duenno = fila?.respuestas?.meta?.cliente_anonimo
-    if (duenno && clienteAnonimo && duenno !== clienteAnonimo) return null
+      const cita = extraerCitaDeFila(fila)
+      if (cita) return cita
+    }
 
-    return extraerCitaDeFila(fila)
+    return null
   } catch {
     // Sin red o sin permiso de lectura: la tarjeta se queda con la copia local.
     return null

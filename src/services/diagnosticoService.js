@@ -38,6 +38,7 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { VARIABLES_DIAGNOSTICO, calcularDiagnostico, normalizarVariables } from '../utils/scoreDiagnostico.js'
+import { guardarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
 const CLAVE_CLIENTE_ANONIMO = 'pyme-launch:cliente-anonimo'
 
@@ -154,16 +155,24 @@ export async function guardarDiagnostico(respuestas) {
     const usuario = await usuarioActual()
     const fila = construirFila(respuestas, usuario)
 
-    // Con sesión se pide la fila de vuelta; en modo anónimo NO. Un insert
-    // con `.select()` genera un INSERT ... RETURNING, y leer esa fila se
-    // evalúa contra la política de SELECT: como el visitante anónimo no
-    // puede verla, PostgreSQL devuelve 42501 aunque la escritura sea
-    // legítima. Sin retorno, la inserción se completa con 201.
-    const consulta = supabase.from('diagnosticos').insert(fila)
+    // Se pide la fila de vuelta también en modo anónimo. Antes no se
+    // podía: `.select()` genera un INSERT ... RETURNING y leer esa fila se
+    // evalúa contra la política de SELECT, que rechazaba al visitante
+    // anónimo con un 42501. Con la política pública de lectura activa, el
+    // insert ya devuelve su `id`, y ese id es el expediente que permite
+    // consultar después el estado de la cita sin rastrear la tabla.
+    let { data, error } = await supabase.from('diagnosticos').insert(fila).select('id').single()
 
-    const { data, error } = usuario ? await consulta.select('id').single() : await consulta
+    // Si la lectura de vuelta sigue bloqueada en algún entorno, se reintenta
+    // sin retorno: perder el id es peor que perder el diagnóstico entero.
+    if (error) {
+      const reintento = await supabase.from('diagnosticos').insert(fila)
+      if (reintento.error) return encolar(respuestas, reintento.error.message)
+      data = null
+      error = null
+    }
 
-    if (error) return encolar(respuestas, error.message)
+    if (data?.id) guardarExpedienteId(data.id)
 
     return { ok: true, id: data?.id }
   } catch (e) {
