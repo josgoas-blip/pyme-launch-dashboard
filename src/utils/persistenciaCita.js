@@ -15,12 +15,10 @@
  * valida antes de confiar en lo guardado y un contenido corrupto se
  * descarta en vez de romper la vista.
  */
+import { estadoCanonico } from './citaDiagnostico.js'
 
 /** Clave versionada, para poder ignorar formatos antiguos sin romper nada. */
 export const CLAVE_CITA = 'pyme-launch:cita:v1'
-
-/** Estados posibles de la cita, en orden de avance. */
-export const ESTADOS_CITA = ['sin_solicitar', 'pendiente_aprobacion', 'solicitada', 'sesion_agendada']
 
 /**
  * ¿Está disponible el almacenamiento? En navegación privada el objeto
@@ -48,7 +46,10 @@ function hayAlmacenamiento() {
  */
 export function esCitaValida(valor) {
   if (typeof valor !== 'object' || valor === null || Array.isArray(valor)) return false
-  return ESTADOS_CITA.includes(valor.estado)
+  // Se valida contra el mismo vocabulario que normaliza la vista, para que
+  // una cita guardada por n8n ('confirmada') no se descarte por no coincidir
+  // con el término que usa el panel ('pendiente_aprobacion').
+  return estadoCanonico(valor.estado) !== null
 }
 
 /**

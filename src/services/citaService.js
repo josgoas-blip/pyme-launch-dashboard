@@ -17,7 +17,7 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo } from './diagnosticoService.js'
-import { esCitaValida } from '../utils/persistenciaCita.js'
+import { extraerCitaDeFila } from '../utils/citaDiagnostico.js'
 
 /**
  * Webhook de agendado.
@@ -83,7 +83,34 @@ export async function solicitarSesion(solicitud) {
 }
 
 /**
- * Lee la cita que n8n haya escrito en `respuestas.cita`.
+ * Columnas que se piden a `diagnosticos` para resolver el estado de la cita.
+ *
+ * Se seleccionan por nombre y no con `*` para no arrastrar las 22 columnas
+ * de variables del modelo en cada sondeo. `estado_cita` y `estado` son
+ * opcionales: si no existen en el esquema, Supabase devuelve error y la
+ * consulta cae al conjunto mínimo.
+ */
+const COLUMNAS_CITA = 'respuestas, fase_embudo, estado_cita, estado'
+const COLUMNAS_CITA_MINIMAS = 'respuestas, fase_embudo'
+
+/** Código de PostgreSQL para "la columna no existe". */
+const COLUMNA_INEXISTENTE = '42703'
+
+/**
+ * ¿Merece la pena pedir las columnas opcionales?
+ *
+ * Se apaga en cuanto PostgreSQL responde que no existen. Sin esta memoria,
+ * cada visita a Configuración lanzaría una consulta condenada a fallar y
+ * dejaría un 400 en la consola del usuario: el esquema no cambia a mitad
+ * de sesión, así que basta con preguntarlo una vez.
+ */
+let columnasOpcionalesDisponibles = true
+
+/**
+ * Lee la cita que n8n haya escrito, ya normalizada.
+ *
+ * Mira primero `respuestas.cita` —que es lo que trae fecha y enlace— y, si
+ * no está, las columnas sueltas de la fila.
  *
  * Es un intento, no una garantía: la política RLS de `diagnosticos` permite
  * al visitante anónimo insertar pero no seleccionar, así que hoy esta
@@ -91,30 +118,48 @@ export async function solicitarSesion(solicitud) {
  * para que la tarjeta refleje la confirmación real en cuanto se active el
  * inicio de sesión o una política de lectura por `cliente_anonimo`.
  *
- * @returns {Promise<{ estado: string } | null>} `null` si no hay cita legible.
+ * @returns {Promise<import('../utils/citaDiagnostico.js').CitaNormalizada|null>}
  */
 export async function leerCitaRemota() {
   if (!haySupabase) return null
 
+  /** Una consulta con el juego de columnas indicado. */
+  const consultar = (columnas) =>
+    supabase.from('diagnosticos').select(columnas).order('id', { ascending: false }).limit(1)
+
   try {
     const clienteAnonimo = obtenerClienteAnonimo()
 
-    const { data, error } = await supabase
-      .from('diagnosticos')
-      .select('respuestas')
-      .order('id', { ascending: false })
-      .limit(1)
+    let data = null
+    let error = null
 
+    if (columnasOpcionalesDisponibles) {
+      ;({ data, error } = await consultar(COLUMNAS_CITA))
+
+      // Un esquema sin `estado_cita`/`estado` rechaza la consulta entera:
+      // se anota para no repetirla y se reintenta con lo imprescindible,
+      // que es donde vive de verdad la cita (`respuestas.cita`).
+      if (error?.code === COLUMNA_INEXISTENTE) {
+        columnasOpcionalesDisponibles = false
+        error = null
+      }
+    }
+
+    if (!columnasOpcionalesDisponibles) {
+      ;({ data, error } = await consultar(COLUMNAS_CITA_MINIMAS))
+    }
+
+    // Sin permiso de lectura, la política RLS no da error: devuelve cero
+    // filas. Ambos casos acaban igual, en la copia local.
     if (error || !data?.length) return null
 
-    const cita = data[0]?.respuestas?.cita
-    if (!esCitaValida(cita)) return null
+    const fila = data[0]
 
     // Con varias filas por navegador, solo vale la del propio visitante.
-    const duenno = data[0]?.respuestas?.meta?.cliente_anonimo
+    const duenno = fila?.respuestas?.meta?.cliente_anonimo
     if (duenno && clienteAnonimo && duenno !== clienteAnonimo) return null
 
-    return cita
+    return extraerCitaDeFila(fila)
   } catch {
     // Sin red o sin permiso de lectura: la tarjeta se queda con la copia local.
     return null

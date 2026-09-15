@@ -4,14 +4,17 @@ import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { solicitarSesion, leerCitaRemota, hayWebhookCita } from '../../services/citaService.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
 import { cargarCitaLocal, guardarCitaLocal } from '../../utils/persistenciaCita.js'
+import { ESTADO_CITA, normalizarCita, formatearFechaCita } from '../../utils/citaDiagnostico.js'
 
 /* Paleta de la tarjeta (Pyme Launch). Se aplican como valores literales
    porque son tonos propios de este bloque y no tokens del tema. */
 const VERDE = '#1B4D3E'
-const CREMA = '#F0EDE6'
+const VERDE_SUAVE = '#EBF3EF' // Fondo de la tarjeta confirmada
+const CREMA = '#F0EDE6' // Fondo de la tarjeta en revisión
 const SUPERFICIE = '#FAF9F5'
 const BORDE = '#E0DCD3'
 const TEXTO = '#2C3E35'
+const TEXTO_SUAVE = '#4B5563'
 
 /** Duración de la sesión, en minutos. */
 const DURACION_MIN = 45
@@ -62,17 +65,6 @@ function proximosDiasHabiles(cantidad = DIAS_HABILES_OFRECIDOS) {
   return dias
 }
 
-/** "2026-09-21 11:00" → "lunes, 21 de septiembre a las 11:00". */
-function describirFecha(fechaPropuesta) {
-  if (typeof fechaPropuesta !== 'string') return null
-
-  const [iso, hora] = fechaPropuesta.split(' ')
-  const fecha = new Date(`${iso}T00:00:00`)
-  if (!Number.isFinite(fecha.getTime())) return fechaPropuesta
-
-  return `${formatoFechaLarga.format(fecha)}${hora ? ` a las ${hora}` : ''}`
-}
-
 /** Envoltorio con la paleta de la tarjeta. */
 function Bloque({ children, fondo = '#FFFFFF', borde = BORDE, grosor = 'border' }) {
   return (
@@ -86,20 +78,20 @@ function Bloque({ children, fondo = '#FFFFFF', borde = BORDE, grosor = 'border' 
 }
 
 /** Cabecera común a los tres estados. */
-function Cabecera({ children }) {
+function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono = CalendarDays, tono = VERDE, children }) {
   return (
     <div className="flex items-start gap-3">
       <span
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-        style={{ backgroundColor: `${VERDE}1A`, color: VERDE }}
+        style={{ backgroundColor: `${tono}1A`, color: tono }}
       >
-        <CalendarDays className="h-5 w-5" />
+        <Icono className="h-5 w-5" />
       </span>
       <div className="min-w-0">
         <h3 className="text-base font-bold leading-tight" style={{ color: TEXTO }}>
-          Sesión Estratégica de Mentoría
+          {titulo}
         </h3>
-        <p className="mt-0.5 text-xs" style={{ color: '#4B5563' }}>
+        <p className="mt-0.5 text-xs" style={{ color: TEXTO_SUAVE }}>
           {children}
         </p>
       </div>
@@ -114,9 +106,14 @@ function Cabecera({ children }) {
  *   1. `respuestas.cita` del diagnóstico — lo que escribe n8n al aprobar.
  *   2. La copia remota que se pueda leer de Supabase.
  *   3. La copia local del navegador, que es lo que sostiene el estado
- *      "pendiente" entre la solicitud y la confirmación.
+ *      "en revisión" entre la solicitud y la confirmación.
  *
- * Sin ninguna de las tres, se muestra el formulario.
+ * Sin ninguna de las tres, se muestra el formulario. Todo lo que llega de
+ * fuera pasa por `normalizarCita`, así que da igual si n8n escribe
+ * `confirmada` o `sesion_agendada`, o si la fecha viene en ISO con huso o
+ * en el formato del formulario.
+ *
+ * @param {{ perfil: import('../../types/configuracion.js').PerfilCliente }} props
  */
 export default function SesionEstrategicaCard({ perfil }) {
   const { respuestas } = useOnboarding()
@@ -127,14 +124,14 @@ export default function SesionEstrategicaCard({ perfil }) {
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState(null)
 
-  // La cita del diagnóstico manda; si no la hay, la copia local.
-  const citaDelDiagnostico = respuestas?.cita
+  // La cita del diagnóstico manda; si no la hay, la copia local. Ambas se
+  // normalizan, así que la vista trabaja siempre con la misma forma.
   const [cita, setCita] = useState(
-    () => (citaDelDiagnostico?.estado ? citaDelDiagnostico : null) ?? cargarCitaLocal(),
+    () => normalizarCita(respuestas?.cita) ?? normalizarCita(cargarCitaLocal()),
   )
 
-  // Intento de lectura remota: si la política RLS lo permite algún día,
-  // la confirmación real de n8n desplaza a la copia local.
+  // Intento de lectura remota: si la política RLS lo permite algún día, la
+  // confirmación real de n8n desplaza a la copia local.
   useEffect(() => {
     let vigente = true
     leerCitaRemota().then((remota) => {
@@ -173,60 +170,66 @@ export default function SesionEstrategicaCard({ perfil }) {
       return
     }
 
-    const nueva = {
-      estado: 'pendiente_aprobacion',
+    const guardada = {
+      estado: 'en_revision',
       fecha_propuesta: fechaPropuesta,
       solicitadaEn: new Date().toISOString(),
     }
-    guardarCitaLocal(nueva)
-    setCita(nueva)
+    guardarCitaLocal(guardada)
+    setCita(normalizarCita(guardada))
   }
 
-  // ── Estado 3: sesión confirmada ─────────────────────────────────────
-  if (cita?.estado === 'sesion_agendada') {
+  // ── Estado confirmado ───────────────────────────────────────────────
+  if (cita?.estado === ESTADO_CITA.CONFIRMADA) {
+    const cuando = formatearFechaCita(cita.fecha)
+
     return (
-      <Bloque borde={VERDE} grosor="border-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <Cabecera>Tu sesión con el equipo de mentoría está confirmada</Cabecera>
-          <span
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold"
-            style={{ backgroundColor: VERDE, color: '#FFFFFF' }}
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Confirmada
-          </span>
-        </div>
+      <Bloque fondo={VERDE_SUAVE} borde={`${VERDE}33`}>
+        <Cabecera titulo="Sesión Estratégica Confirmada" icono={CheckCircle2}>
+          Tu mentor ha aceptado la sesión
+        </Cabecera>
 
-        <p className="mt-4 text-lg font-bold" style={{ color: TEXTO }}>
-          {describirFecha(cita.fecha_propuesta) ?? 'Fecha por confirmar'}
-        </p>
-        <p className="mt-1 text-sm" style={{ color: '#4B5563' }}>
-          Duración: {DURACION_MIN} minutos
+        <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO }}>
+          {cuando ? (
+            <>
+              Tu sesión ha sido confirmada para el{' '}
+              <span className="font-bold">{cuando}</span>. Recibirás recordatorios en tu correo.
+            </>
+          ) : (
+            <>
+              Tu sesión ha sido confirmada. Recibirás la fecha definitiva y los recordatorios en tu
+              correo.
+            </>
+          )}
         </p>
 
-        {cita.meet_url ? (
+        {cita.meetUrl ? (
           <a
-            href={cita.meet_url}
+            href={cita.meetUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
             style={{ backgroundColor: VERDE }}
           >
             <Video className="h-4 w-4" />
-            Unirse a Google Meet
+            Entrar a Google Meet
           </a>
         ) : (
-          <p className="mt-4 text-sm" style={{ color: '#4B5563' }}>
+          <p className="mt-4 text-sm" style={{ color: TEXTO_SUAVE }}>
             El enlace de Google Meet llegará por correo antes de la sesión.
           </p>
         )}
+
+        <p className="mt-4 text-xs" style={{ color: TEXTO_SUAVE }}>
+          Duración: {DURACION_MIN} minutos
+        </p>
       </Bloque>
     )
   }
 
-  // ── Estado 2: solicitud en revisión ─────────────────────────────────
-  if (cita?.estado === 'pendiente_aprobacion' || cita?.estado === 'solicitada') {
-    const cuando = describirFecha(cita.fecha_propuesta)
+  // ── Estado en revisión ──────────────────────────────────────────────
+  if (cita?.estado === ESTADO_CITA.PENDIENTE) {
+    const cuando = formatearFechaCita(cita.fecha)
 
     return (
       <Bloque fondo={CREMA} borde={VERDE}>
@@ -243,7 +246,7 @@ export default function SesionEstrategicaCard({ perfil }) {
     )
   }
 
-  // ── Estado 1: sin solicitar ─────────────────────────────────────────
+  // ── Sin solicitar ───────────────────────────────────────────────────
   return (
     <Bloque fondo={SUPERFICIE}>
       <Cabecera>
@@ -255,7 +258,7 @@ export default function SesionEstrategicaCard({ perfil }) {
           <label
             htmlFor="cita-fecha"
             className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: '#4B5563' }}
+            style={{ color: TEXTO_SUAVE }}
           >
             <CalendarDays className="h-3.5 w-3.5" />
             Día (lunes a viernes)
@@ -280,7 +283,7 @@ export default function SesionEstrategicaCard({ perfil }) {
           <label
             htmlFor="cita-hora"
             className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider"
-            style={{ color: '#4B5563' }}
+            style={{ color: TEXTO_SUAVE }}
           >
             <Clock className="h-3.5 w-3.5" />
             Hora de inicio (10:00 – 19:00)
@@ -330,7 +333,7 @@ export default function SesionEstrategicaCard({ perfil }) {
       )}
 
       {!hayWebhookCita && (
-        <p className="mt-3 text-xs" style={{ color: '#4B5563' }}>
+        <p className="mt-3 text-xs" style={{ color: TEXTO_SUAVE }}>
           El agendado está desactivado: falta definir VITE_N8N_WEBHOOK_CITA_URL.
         </p>
       )}
