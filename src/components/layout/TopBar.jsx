@@ -1,10 +1,12 @@
-import { Menu, FlaskConical } from 'lucide-react'
+import { Menu, FlaskConical, LogOut } from 'lucide-react'
 import BotonNuevoDiagnostico from './BotonNuevoDiagnostico.jsx'
 import { calcularEstadoGlobal } from '../../utils/estadoGlobal.js'
 import { derivarResumenGlobal } from '../../utils/resumenDiagnostico.js'
 import { usePlan } from '../../context/PlanContext.jsx'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { PLANES, PLAN_INFO } from '../../utils/planes.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { cerrarSesion } from '../../services/authService.js'
 
 /**
  * Barra superior del área de contenido.
@@ -23,6 +25,7 @@ import { PLANES, PLAN_INFO } from '../../utils/planes.js'
 export default function TopBar({ nombreUsuario, onAbrirMenu }) {
   const { plan, setPlan } = usePlan()
   const { respuestas, reiniciarOnboarding } = useOnboarding()
+  const { authDisponible } = useAuth()
 
   const resumen = derivarResumenGlobal(respuestas)
   const estadoGlobal = calcularEstadoGlobal(resumen?.score ?? 0)
@@ -82,6 +85,20 @@ export default function TopBar({ nombreUsuario, onAbrirMenu }) {
           </div>
 
           <BotonNuevoDiagnostico onConfirmar={reiniciarOnboarding} />
+
+          {/* El cierre de sesión solo aparece si hay autenticación: en una
+              instalación sin credenciales no habría nada que cerrar. */}
+          {authDisponible && (
+            <button
+              type="button"
+              onClick={cerrarSesion}
+              title="Cerrar sesión"
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#4B5563] transition-colors hover:bg-gray-100 hover:text-[#1F2937] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            >
+              <LogOut className="h-3 w-3 shrink-0" />
+              Salir
+            </button>
+          )}
         </div>
       </div>
     </header>

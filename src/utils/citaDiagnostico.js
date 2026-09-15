@@ -150,22 +150,35 @@ export function parsearRespuestas(respuestas) {
 /**
  * ¿Esta fila pertenece al visitante indicado?
  *
- * Hay dos marcas posibles, según quién creara la fila:
- *   - `meta.cliente_anonimo`, que estampa el panel al guardar el diagnóstico.
+ * Hay cuatro marcas posibles, según quién creara la fila y si había sesión:
+ *   - La columna `user_id`, que rellena el panel cuando hay sesión.
+ *   - `meta.user_id` y `meta.cliente_anonimo`, que estampa el panel dentro
+ *     del propio JSON al guardar el diagnóstico.
  *   - `id_usuario`, que es ese mismo identificador viajando en el payload
  *     del webhook y que n8n copia en la fila que crea al agendar.
  *
+ * Se aceptan varios identificadores porque un mismo usuario puede tener
+ * filas anteriores a su registro: comprobar solo el `user_id` le escondería
+ * la cita que pidió antes de crear la cuenta.
+ *
  * @param {Record<string, unknown>|null} fila
- * @param {string|null} clienteAnonimo
+ * @param {...(string|null)} identificadores - Cliente anónimo, `user_id`…
  * @returns {boolean}
  */
-export function filaDelVisitante(fila, clienteAnonimo) {
-  if (!clienteAnonimo) return false
+export function filaDelVisitante(fila, ...identificadores) {
+  const validos = identificadores.filter((id) => typeof id === 'string' && id.trim())
+  if (validos.length === 0) return false
 
   const respuestas = parsearRespuestas(fila?.respuestas)
-  if (!respuestas) return false
 
-  return respuestas?.meta?.cliente_anonimo === clienteAnonimo || respuestas?.id_usuario === clienteAnonimo
+  const marcas = [
+    fila?.user_id,
+    respuestas?.meta?.user_id,
+    respuestas?.meta?.cliente_anonimo,
+    respuestas?.id_usuario,
+  ]
+
+  return marcas.some((marca) => typeof marca === 'string' && validos.includes(marca))
 }
 
 /**

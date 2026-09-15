@@ -11,7 +11,7 @@
  * valores de reserva en lugar de romperse.
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
-import { obtenerClienteAnonimo } from './diagnosticoService.js'
+import { obtenerClienteAnonimo, usuarioActual } from './diagnosticoService.js'
 import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 import { filaDelVisitante } from '../utils/citaDiagnostico.js'
 
@@ -23,6 +23,7 @@ import { filaDelVisitante } from '../utils/citaDiagnostico.js'
  */
 const SELECT_FICHA = `
   id,
+  user_id,
   completado_en,
   respuestas,
   mentor_principal:mentor_principal_id (id, nombre, especialidad, avatar_url),
@@ -131,8 +132,10 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
       if (!error && data) return fichaDeFila(data)
     }
 
+    // Se aceptan las dos identidades: la fila puede ser anterior al registro.
     const clienteAnonimo = obtenerClienteAnonimo()
-    if (!clienteAnonimo) return null
+    const usuario = await usuarioActual()
+    if (!clienteAnonimo && !usuario?.id) return null
 
     const { data, error } = await supabase
       .from('diagnosticos')
@@ -144,7 +147,7 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
 
     // Solo filas del propio visitante: sin esta comprobación la tarjeta
     // podría anunciar el mentor o el alta de otra persona.
-    const propias = data.filter((fila) => filaDelVisitante(fila, clienteAnonimo))
+    const propias = data.filter((fila) => filaDelVisitante(fila, clienteAnonimo, usuario?.id))
     if (propias.length === 0) return null
 
     const conMentores = propias.find((fila) => fila.mentor_principal || fila.comentor)

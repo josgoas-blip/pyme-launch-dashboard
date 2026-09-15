@@ -39,6 +39,7 @@
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { VARIABLES_DIAGNOSTICO, calcularDiagnostico, normalizarVariables } from '../utils/scoreDiagnostico.js'
 import { guardarExpedienteId } from '../utils/persistenciaDiagnostico.js'
+import { parsearRespuestas } from '../utils/citaDiagnostico.js'
 
 const CLAVE_CLIENTE_ANONIMO = 'pyme-launch:cliente-anonimo'
 
@@ -76,8 +77,75 @@ export function obtenerClienteAnonimo() {
   }
 }
 
+/**
+ * ¿Este usuario ya completó un diagnóstico?
+ *
+ * Lo consulta el enrutado tras iniciar sesión: decide si al usuario le toca
+ * el cuestionario por primera vez o el panel directamente.
+ *
+ * Solo se pide el `id` y una fila: basta con saber si existe alguna, y
+ * traerse el JSON completo para contar sería tirar ancho de banda.
+ *
+ * Ante un fallo de red o de permisos devuelve `null` —"no se sabe"—, y no
+ * `false`: tratar un error como "no tiene diagnóstico" mandaría a repetir
+ * el cuestionario a alguien que ya lo hizo.
+ *
+ * @param {string|null} userId
+ * @returns {Promise<boolean|null>} `null` si no se pudo averiguar.
+ */
+export async function tieneDiagnosticoPrevio(userId) {
+  if (!haySupabase || !userId) return false
+
+  try {
+    const { data, error } = await supabase
+      .from('diagnosticos')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1)
+
+    if (error) return null
+    return Boolean(data?.length)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Último diagnóstico guardado por este usuario.
+ *
+ * Permite recuperar el panel en un navegador distinto al que respondió el
+ * cuestionario: sin esto, la sesión iniciada en otro equipo encontraría el
+ * `localStorage` vacío y volvería a mandar al cuestionario.
+ *
+ * @param {string|null} userId
+ * @returns {Promise<{ id: string, respuestas: Record<string, unknown> }|null>}
+ */
+export async function leerUltimoDiagnostico(userId) {
+  if (!haySupabase || !userId) return null
+
+  try {
+    const { data, error } = await supabase
+      .from('diagnosticos')
+      .select('id, respuestas')
+      .eq('user_id', userId)
+      .order('completado_en', { ascending: false })
+      .limit(1)
+
+    if (error || !data?.length) return null
+
+    // `respuestas` llega unas veces como objeto y otras como cadena JSON,
+    // según quién escribiera la fila.
+    const respuestas = parsearRespuestas(data[0].respuestas)
+    if (!respuestas) return null
+
+    return { id: data[0].id, respuestas }
+  } catch {
+    return null
+  }
+}
+
 /** Usuario autenticado actual, o `null` en modo anónimo. */
-async function usuarioActual() {
+export async function usuarioActual() {
   if (!supabase) return null
   try {
     const { data } = await supabase.auth.getUser()
@@ -110,14 +178,18 @@ export function construirFila(respuestas, usuario = null) {
   const columnas = {}
   for (const id of VARIABLES_DIAGNOSTICO) columnas[id] = variables[id]
 
-  // Sin columna para el visitante anónimo, el identificador viaja dentro
-  // del propio JSON para no perder la trazabilidad del registro.
-  const json = usuario
-    ? respuestas
-    : {
-        ...respuestas,
-        meta: { ...(respuestas?.meta ?? {}), cliente_anonimo: obtenerClienteAnonimo() },
-      }
+  // El identificador viaja también dentro del JSON: con sesión es el
+  // `user_id` real y sin ella, el cliente anónimo del navegador. Duplicarlo
+  // en `meta` no es redundante — es lo que permite correlacionar la fila
+  // con las que crea n8n, que solo ven el payload del webhook y no la
+  // columna `user_id`.
+  const json = {
+    ...respuestas,
+    meta: {
+      ...(respuestas?.meta ?? {}),
+      ...(usuario ? { user_id: usuario.id } : { cliente_anonimo: obtenerClienteAnonimo() }),
+    },
+  }
 
   return {
     ...columnas,

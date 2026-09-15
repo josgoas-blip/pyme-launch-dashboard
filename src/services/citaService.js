@@ -16,7 +16,7 @@
  *   2xx   solicitud registrada (el cuerpo puede venir vacío)
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
-import { obtenerClienteAnonimo } from './diagnosticoService.js'
+import { obtenerClienteAnonimo, usuarioActual } from './diagnosticoService.js'
 import { extraerCitaDeFila, filaDelVisitante } from '../utils/citaDiagnostico.js'
 import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
@@ -91,7 +91,7 @@ export async function solicitarSesion(solicitud) {
  * `estado`: no existen en esta tabla y pedirlas hacía fallar la consulta
  * entera con un 42703.
  */
-const COLUMNAS_CITA = 'id, respuestas, fase_embudo'
+const COLUMNAS_CITA = 'id, user_id, respuestas, fase_embudo'
 
 /**
  * Filas que se revisan cuando no hay expediente guardado.
@@ -140,8 +140,10 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
     //    buscan las filas de este visitante. n8n no actualiza la fila del
     //    diagnóstico, crea una propia con el payload del webhook, así que
     //    la cita suele estar en una fila distinta a la del expediente.
+    // Se aceptan las dos identidades: la fila puede ser anterior al registro.
     const clienteAnonimo = obtenerClienteAnonimo()
-    if (!clienteAnonimo) return null
+    const usuario = await usuarioActual()
+    if (!clienteAnonimo && !usuario?.id) return null
 
     const { data, error } = await supabase
       .from('diagnosticos')
@@ -154,7 +156,7 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId()) {
     // Solo filas del propio visitante: sin esta comprobación el panel
     // podría anunciar la sesión de otra persona.
     for (const fila of data) {
-      if (!filaDelVisitante(fila, clienteAnonimo)) continue
+      if (!filaDelVisitante(fila, clienteAnonimo, usuario?.id)) continue
 
       const cita = extraerCitaDeFila(fila)
       if (cita) return cita
