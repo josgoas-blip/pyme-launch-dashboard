@@ -162,10 +162,8 @@ function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono =
  * fuera pasa por `normalizarCita`, así que da igual si n8n escribe
  * `confirmada` o `sesion_agendada`, o si la fecha viene en ISO con huso o
  * en el formato del formulario.
- *
- * @param {{ perfil: import('../../types/configuracion.js').PerfilCliente }} props
  */
-export default function SesionEstrategicaCard({ perfil }) {
+export default function SesionEstrategicaCard() {
   const { respuestas } = useOnboarding()
   const { userId, nombreCompleto, email: emailSesion } = useAuth()
   const { soloLectura, expedienteId: expedienteLectura } = useModoLectura()
@@ -312,11 +310,11 @@ export default function SesionEstrategicaCard({ perfil }) {
       // El expediente es la fila de `diagnosticos` creada al guardar el
       // cuestionario: permite a n8n escribir la cita en la fila correcta.
       expediente_id: cargarExpedienteId(),
-      // El nombre de la sesión solo vale si hay sesión: sin ella
-      // `nombreCompleto` es el literal "Invitado", que al ser una cadena no
-      // vacía cortaría el respaldo al perfil y llegaría así al mentor.
-      cliente_nombre: (userId && nombreCompleto) || perfil?.contactoNombre || 'Ana López',
-      cliente_email: emailSesion || perfil?.contactoEmail || 'josgoas@outlook.com',
+      // Nombre y correo reales de la sesión (perfil → registro → correo).
+      // Sin sesión se envía `null`: el literal "Invitado" o un contacto
+      // de ejemplo llegarían al mentor como si fueran los del cliente.
+      cliente_nombre: userId ? nombreCompleto : null,
+      cliente_email: emailSesion ?? null,
       fecha_propuesta: fechaPropuesta,
       fase: respuestas?.fase_embudo || 'Tracción',
       score_total: respuestas?.score_total ?? 78,

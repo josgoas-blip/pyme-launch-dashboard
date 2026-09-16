@@ -1,4 +1,3 @@
-import { perfilCliente } from '../../data/configuracionMock.js'
 import BloqueHeader from './BloqueHeader.jsx'
 import PerfilClienteCard from './PerfilClienteCard.jsx'
 import SesionEstrategicaCard from './SesionEstrategicaCard.jsx'
@@ -25,7 +24,7 @@ export default function ConfiguracionView() {
           titulo="Perfil del Emprendedor & Ficha Identificativa"
           subtitulo="Datos del emprendedor y equipo de mentoría asignado"
         />
-        <PerfilClienteCard perfilCliente={perfilCliente} />
+        <PerfilClienteCard />
       </section>
 
       {/* BLOQUE 2: Sesión Estratégica de Mentoría */}
@@ -35,7 +34,7 @@ export default function ConfiguracionView() {
           titulo="Sesión Estratégica de Mentoría"
           subtitulo="Agenda 45 minutos con tu mentor para revisar el diagnóstico"
         />
-        <SesionEstrategicaCard perfil={perfilCliente} />
+        <SesionEstrategicaCard />
       </section>
 
       {/* BLOQUE 3: Consola de Exportación */}

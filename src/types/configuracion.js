@@ -3,20 +3,9 @@
  * Contrato entre los mocks (src/data/configuracionMock.js) y los componentes
  * visuales de src/components/dashboard/.
  *
- * El equipo de mentoría ya no se tipa aquí: llega de Supabase y lo describe
- * `Mentor` en src/services/expedienteService.js.
- */
-
-/**
- * Perfil de la PYME / cliente.
- * @typedef {Object} PerfilCliente
- * @property {string} nombreEmpresa
- * @property {string} nif
- * @property {string} sector - Descripción del sector de actividad.
- * @property {string} categoriaSector - Clasificación breve, p.ej. "B2B Servicios".
- * @property {string} tamano - p.ej. "1-10 empleados".
- * @property {string} contactoNombre
- * @property {string} contactoEmail
+ * El perfil del emprendedor y el equipo de mentoría ya no se tipan aquí: llegan
+ * de Supabase y los describen `FichaEmpresa` (src/services/perfilEmpresaService.js)
+ * y `Mentor` (src/services/expedienteService.js).
  */
 
 /**
