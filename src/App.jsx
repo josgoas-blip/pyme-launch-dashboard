@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AppLayout from './components/layout/AppLayout.jsx'
 import AuthView from './components/auth/AuthView.jsx'
 import PantallaCargando from './components/auth/PantallaCargando.jsx'
@@ -20,9 +20,12 @@ import {
   cargarDiagnosticoLocal,
   guardarDiagnosticoLocal,
   borrarDiagnosticoLocal,
+  cargarExpedienteId,
   guardarExpedienteId,
   borrarExpedienteId,
 } from './utils/persistenciaDiagnostico.js'
+import { debeSustituirLocal } from './utils/hidratacionDiagnostico.js'
+import { borrarPestanaActiva, borrarPlan } from './utils/persistenciaNavegacion.js'
 import { borrarHitosCompletados } from './utils/persistenciaHitos.js'
 import { borrarCitaLocal } from './utils/persistenciaCita.js'
 import { leerParametrosConsultor } from './utils/modoConsultor.js'
@@ -141,6 +144,23 @@ function Enrutador() {
   const [respuestas, setRespuestas] = useState(cargarDiagnosticoLocal)
 
   /**
+   * Copia de `respuestas` legible desde callbacks asíncronos.
+   *
+   * La búsqueda en Supabase decide al volver si sustituye la copia local, y
+   * tiene que comparar con la copia de ese momento, no con la del render en
+   * que empezó la consulta.
+   */
+  const respuestasRef = useRef(respuestas)
+  respuestasRef.current = respuestas
+
+  /** De qué expediente salen los datos del panel y de dónde se cargaron. */
+  const [expediente, setExpediente] = useState(() =>
+    respuestas
+      ? { id: cargarExpedienteId(), completadoEn: respuestas.meta?.completadoEn ?? null, origen: 'local' }
+      : null,
+  )
+
+  /**
    * Resultado de buscar el historial del usuario en Supabase.
    *
    * Guarda para qué `userId` se resolvió: si en la misma pestaña entra otra
@@ -159,21 +179,26 @@ function Enrutador() {
   const [nuevoDiagnostico, setNuevoDiagnostico] = useState(false)
 
   /**
-   * Usuario recurrente: al iniciar sesión (o al cargar con una sesión ya
-   * abierta) se busca su último diagnóstico en Supabase.
+   * Hidratación desde Supabase: al iniciar sesión, o al cargar con una
+   * sesión ya abierta (incluido un F5), se busca el último diagnóstico del
+   * usuario y se carga completo en el estado global.
    *
-   *   - Si lo tiene, va directo al panel con sus datos; el cuestionario no
+   *   - Si lo tiene, el panel se pinta con sus datos; el cuestionario no
    *     vuelve a aparecer salvo que pulse "Nuevo diagnóstico".
    *   - Si no lo tiene, va al cuestionario.
    *   - Si no se puede saber, se le dice y se le deja reintentar, en lugar
    *     de mandarle a repetir un cuestionario que quizá ya hizo.
    *
-   * Solo se consulta cuando no hay copia local: si el navegador ya la
-   * tiene, el destino es el panel igualmente y la consulta solo añadiría
-   * espera antes de pintarlo.
+   * Con copia en el navegador el panel se pinta al instante con ella —una
+   * recarga no pasa por pantallas de carga ni pierde la pestaña— y la
+   * consulta corre igualmente en segundo plano: Supabase es la fuente de
+   * verdad, y la copia local puede estar incompleta o ser de una
+   * evaluación anterior a la última. `debeSustituirLocal` decide cuál gana.
+   *
+   * Se consulta una vez por usuario (`busqueda.userId`), no en cada cambio.
    */
   useEffect(() => {
-    if (!userId || respuestas || nuevoDiagnostico || mostrandoRecuperacion) return undefined
+    if (!userId || nuevoDiagnostico || mostrandoRecuperacion) return undefined
     if (busqueda.userId === userId) return undefined
 
     let vigente = true
@@ -182,9 +207,20 @@ function Enrutador() {
       if (!vigente) return
 
       if (resultado.estado === 'encontrado') {
-        guardarDiagnosticoLocal(resultado.respuestas)
-        guardarExpedienteId(resultado.id)
-        setRespuestas(resultado.respuestas)
+        const local = { respuestas: respuestasRef.current, expedienteId: cargarExpedienteId() }
+
+        if (debeSustituirLocal(local, resultado)) {
+          if (resultado.expediente.id) guardarExpedienteId(resultado.expediente.id)
+          setExpediente(resultado.expediente)
+
+          // Si Supabase trae lo mismo que ya se está pintando, no se
+          // sustituye el objeto: evita recalcular todas las pestañas tras
+          // cada recarga sin que cambie nada visible.
+          if (JSON.stringify(local.respuestas) !== JSON.stringify(resultado.respuestas)) {
+            guardarDiagnosticoLocal(resultado.respuestas)
+            setRespuestas(resultado.respuestas)
+          }
+        }
       }
 
       setBusqueda({ userId, estado: resultado.estado })
@@ -193,7 +229,7 @@ function Enrutador() {
     return () => {
       vigente = false
     }
-  }, [userId, respuestas, nuevoDiagnostico, mostrandoRecuperacion, busqueda])
+  }, [userId, nuevoDiagnostico, mostrandoRecuperacion, busqueda])
 
   /**
    * Al cerrar sesión se limpia el diagnóstico en memoria y en el navegador.
@@ -205,12 +241,16 @@ function Enrutador() {
     if (!authDisponible || cargandoSesion || userId) return
 
     setRespuestas(null)
+    setExpediente(null)
     setBusqueda(BUSQUEDA_PENDIENTE)
     setNuevoDiagnostico(false)
     borrarDiagnosticoLocal()
     borrarExpedienteId()
     borrarCitaLocal()
     borrarHitosCompletados()
+    // El siguiente inicio de sesión entra siempre por Inicio.
+    borrarPestanaActiva()
+    borrarPlan()
   }, [authDisponible, cargandoSesion, userId])
 
   /**
@@ -223,9 +263,19 @@ function Enrutador() {
    */
   const handleOnboardingComplete = (nuevas) => {
     setRespuestas(nuevas)
+    setExpediente({ id: null, completadoEn: nuevas.meta?.completadoEn ?? null, origen: 'cuestionario' })
     setNuevoDiagnostico(false)
     guardarDiagnosticoLocal(nuevas)
-    guardarDiagnostico(nuevas)
+    guardarDiagnostico(nuevas).then((resultado) => {
+      // El id llega cuando Supabase confirma la escritura: se incorpora
+      // solo si el panel sigue mostrando esta misma evaluación.
+      if (!resultado?.id) return
+      setExpediente((actual) =>
+        actual?.origen === 'cuestionario' && actual.completadoEn === (nuevas.meta?.completadoEn ?? null)
+          ? { ...actual, id: resultado.id }
+          : actual,
+      )
+    })
   }
 
   /**
@@ -242,7 +292,10 @@ function Enrutador() {
     // La cita pertenece al expediente que se borra.
     borrarCitaLocal()
     borrarExpedienteId()
+    // La nueva evaluación empieza, como toda entrada al panel, por Inicio.
+    borrarPestanaActiva()
     setRespuestas(null)
+    setExpediente(null)
   }
 
   /** Sale de la pantalla de recuperación y limpia la URL. */
@@ -326,7 +379,7 @@ function Enrutador() {
   }
 
   return (
-    <OnboardingProvider respuestas={respuestas} onReiniciar={handleReiniciarOnboarding}>
+    <OnboardingProvider respuestas={respuestas} expediente={expediente} onReiniciar={handleReiniciarOnboarding}>
       {/* La aplicación se oculta al imprimir: el PDF solo lleva el informe.
           Por eso el informe se monta fuera de este árbol. */}
       <div className="no-imprimir">
@@ -348,7 +401,9 @@ function Enrutador() {
 export default function App() {
   return (
     <AuthProvider>
-      <PlanProvider planInicial="report">
+      {/* El plan elegido sobrevive a un F5; el del Modo Consultor, anidado
+          dentro, no persiste y es siempre el completo. */}
+      <PlanProvider planInicial="report" persistir>
         <Enrutador />
       </PlanProvider>
     </AuthProvider>

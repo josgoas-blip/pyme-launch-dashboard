@@ -5,6 +5,7 @@ import { TABS } from './TabNav.jsx'
 import AgenteConsultorFlotante from '../chat/AgenteConsultorFlotante.jsx'
 import { NavegacionProvider } from '../../context/NavegacionContext.jsx'
 import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
+import { cargarPestanaActiva, guardarPestanaActiva } from '../../utils/persistenciaNavegacion.js'
 
 /**
  * Cascarón del Dashboard con el patrón habitual de un SaaS analítico:
@@ -27,9 +28,24 @@ import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
  * }} props
  */
 export default function AppLayout({ nombreUsuario, children }) {
-  const [activeTab, setActiveTab] = useState(TABS[0].id)
-  const [menuAbierto, setMenuAbierto] = useState(false)
   const { soloLectura } = useModoLectura()
+
+  /**
+   * Pestaña activa, conservada ante recargas.
+   *
+   * Un F5 estando en Viabilidad vuelve a Viabilidad; una pestaña nueva del
+   * navegador o un nuevo inicio de sesión entran por Inicio (ver
+   * `persistenciaNavegacion.js`).
+   */
+  const [activeTab, setActiveTabEstado] = useState(
+    () => cargarPestanaActiva(TABS.map((t) => t.id), soloLectura) ?? TABS[0].id,
+  )
+  const setActiveTab = (pestana) => {
+    setActiveTabEstado(pestana)
+    guardarPestanaActiva(pestana, soloLectura)
+  }
+
+  const [menuAbierto, setMenuAbierto] = useState(false)
 
   return (
     <div className="min-h-screen bg-gray-50">

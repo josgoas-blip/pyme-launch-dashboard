@@ -39,7 +39,7 @@
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { VARIABLES_DIAGNOSTICO, calcularDiagnostico, normalizarVariables } from '../utils/scoreDiagnostico.js'
 import { guardarExpedienteId, esDiagnosticoValido } from '../utils/persistenciaDiagnostico.js'
-import { parsearRespuestas } from '../utils/citaDiagnostico.js'
+import { COLUMNAS_HIDRATACION, hidratarExpediente } from '../utils/hidratacionDiagnostico.js'
 
 const CLAVE_CLIENTE_ANONIMO = 'pyme-launch:cliente-anonimo'
 
@@ -122,7 +122,11 @@ const FILAS_HISTORIAL = 5
  * Resultado de buscar el historial de un usuario.
  *
  * @typedef {(
- *   { estado: 'encontrado', id: string, completadoEn: string|null, respuestas: Record<string, unknown> }
+ *   {
+ *     estado: 'encontrado',
+ *     respuestas: Record<string, unknown>,
+ *     expediente: import('../utils/hidratacionDiagnostico.js').Expediente,
+ *   }
  *   | { estado: 'sin-diagnostico' }
  *   | { estado: 'ilegible' }
  *   | { estado: 'error' }
@@ -154,9 +158,12 @@ export async function buscarDiagnosticoPrevio(userId) {
   if (!haySupabase || !userId) return { estado: 'sin-diagnostico' }
 
   try {
+    // Además del JSON se piden las columnas del expediente (score, fase y
+    // las 20 variables): la hidratación las usa para completar un JSON al
+    // que le falten datos.
     const { data, error } = await supabase
       .from('diagnosticos')
-      .select('id, completado_en, respuestas')
+      .select(COLUMNAS_HIDRATACION)
       .eq('user_id', userId)
       .order('completado_en', { ascending: false })
       .limit(FILAS_HISTORIAL)
@@ -165,11 +172,9 @@ export async function buscarDiagnosticoPrevio(userId) {
     if (!data?.length) return { estado: 'sin-diagnostico' }
 
     for (const fila of data) {
-      // `respuestas` llega unas veces como objeto y otras como cadena JSON,
-      // según quién escribiera la fila.
-      const respuestas = parsearRespuestas(fila.respuestas)
-      if (respuestas && esDiagnosticoValido(respuestas)) {
-        return { estado: 'encontrado', id: fila.id, completadoEn: fila.completado_en ?? null, respuestas }
+      const hidratado = hidratarExpediente(fila)
+      if (hidratado && esDiagnosticoValido(hidratado.respuestas)) {
+        return { estado: 'encontrado', ...hidratado }
       }
     }
 
