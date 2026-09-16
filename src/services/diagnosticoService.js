@@ -38,7 +38,7 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { VARIABLES_DIAGNOSTICO, calcularDiagnostico, normalizarVariables } from '../utils/scoreDiagnostico.js'
-import { guardarExpedienteId } from '../utils/persistenciaDiagnostico.js'
+import { guardarExpedienteId, esDiagnosticoValido } from '../utils/persistenciaDiagnostico.js'
 import { parsearRespuestas } from '../utils/citaDiagnostico.js'
 
 const CLAVE_CLIENTE_ANONIMO = 'pyme-launch:cliente-anonimo'
@@ -111,36 +111,71 @@ export async function tieneDiagnosticoPrevio(userId) {
 }
 
 /**
- * Último diagnóstico guardado por este usuario.
+ * Filas que se revisan al buscar el último diagnóstico utilizable.
  *
- * Permite recuperar el panel en un navegador distinto al que respondió el
- * cuestionario: sin esto, la sesión iniciada en otro equipo encontraría el
- * `localStorage` vacío y volvería a mandar al cuestionario.
+ * No basta con una: si la más reciente tuviera el JSON dañado, quedarse
+ * solo con ella llevaría al cuestionario a alguien que sí tiene historial.
+ */
+const FILAS_HISTORIAL = 5
+
+/**
+ * Resultado de buscar el historial de un usuario.
+ *
+ * @typedef {(
+ *   { estado: 'encontrado', id: string, completadoEn: string|null, respuestas: Record<string, unknown> }
+ *   | { estado: 'sin-diagnostico' }
+ *   | { estado: 'ilegible' }
+ *   | { estado: 'error' }
+ * )} HistorialDiagnostico
+ */
+
+/**
+ * Último diagnóstico guardado por este usuario, para decidir a dónde va
+ * tras iniciar sesión: al panel si ya tiene uno, al cuestionario si no.
+ *
+ * Distingue los casos que antes se confundían en un único `null`, porque
+ * cada uno lleva a un sitio distinto:
+ *   - `encontrado`: tiene diagnóstico → panel con sus datos.
+ *   - `sin-diagnostico`: consulta correcta y sin filas → cuestionario.
+ *   - `ilegible`: tiene filas pero ninguna con un diagnóstico utilizable.
+ *   - `error`: no se pudo consultar (red, permisos).
+ *
+ * Los dos últimos **no** llevan al cuestionario: tratar un fallo como "no
+ * tiene diagnóstico" haría repetirlo a quien ya lo hizo, que es justo lo
+ * que no debe pasar.
+ *
+ * También permite recuperar el panel en un navegador distinto al que
+ * respondió el cuestionario, con el `localStorage` vacío.
  *
  * @param {string|null} userId
- * @returns {Promise<{ id: string, respuestas: Record<string, unknown> }|null>}
+ * @returns {Promise<HistorialDiagnostico>}
  */
-export async function leerUltimoDiagnostico(userId) {
-  if (!haySupabase || !userId) return null
+export async function buscarDiagnosticoPrevio(userId) {
+  if (!haySupabase || !userId) return { estado: 'sin-diagnostico' }
 
   try {
     const { data, error } = await supabase
       .from('diagnosticos')
-      .select('id, respuestas')
+      .select('id, completado_en, respuestas')
       .eq('user_id', userId)
       .order('completado_en', { ascending: false })
-      .limit(1)
+      .limit(FILAS_HISTORIAL)
 
-    if (error || !data?.length) return null
+    if (error) return { estado: 'error' }
+    if (!data?.length) return { estado: 'sin-diagnostico' }
 
-    // `respuestas` llega unas veces como objeto y otras como cadena JSON,
-    // según quién escribiera la fila.
-    const respuestas = parsearRespuestas(data[0].respuestas)
-    if (!respuestas) return null
+    for (const fila of data) {
+      // `respuestas` llega unas veces como objeto y otras como cadena JSON,
+      // según quién escribiera la fila.
+      const respuestas = parsearRespuestas(fila.respuestas)
+      if (respuestas && esDiagnosticoValido(respuestas)) {
+        return { estado: 'encontrado', id: fila.id, completadoEn: fila.completado_en ?? null, respuestas }
+      }
+    }
 
-    return { id: data[0].id, respuestas }
+    return { estado: 'ilegible' }
   } catch {
-    return null
+    return { estado: 'error' }
   }
 }
 

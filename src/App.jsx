@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import AppLayout from './components/layout/AppLayout.jsx'
 import AuthView from './components/auth/AuthView.jsx'
 import PantallaCargando from './components/auth/PantallaCargando.jsx'
+import RestablecerPasswordView from './components/auth/RestablecerPasswordView.jsx'
+import HistorialNoDisponible from './components/auth/HistorialNoDisponible.jsx'
 import OnboardingWizard from './components/onboarding/OnboardingWizard.jsx'
 import InicioView from './components/dashboard/InicioView.jsx'
 import AnalisisView from './components/dashboard/AnalisisView.jsx'
@@ -12,7 +14,8 @@ import InformeEjecutivo from './components/informe/InformeEjecutivo.jsx'
 import { PlanProvider } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
-import { guardarDiagnostico, leerUltimoDiagnostico } from './services/diagnosticoService.js'
+import { guardarDiagnostico, buscarDiagnosticoPrevio } from './services/diagnosticoService.js'
+import { cerrarSesion } from './services/authService.js'
 import {
   cargarDiagnosticoLocal,
   guardarDiagnosticoLocal,
@@ -23,6 +26,11 @@ import {
 import { borrarHitosCompletados } from './utils/persistenciaHitos.js'
 import { borrarCitaLocal } from './utils/persistenciaCita.js'
 import { leerParametrosConsultor } from './utils/modoConsultor.js'
+import {
+  llegoDesdeEnlaceRecuperacion,
+  errorDelEnlaceRecuperacion,
+  salirDeRutaRecuperacion,
+} from './utils/recuperacionPassword.js'
 import { cargarExpedienteConsultor } from './services/consultorService.js'
 import { ModoLecturaProvider } from './context/ModoLecturaContext.jsx'
 import BannerConsultor from './components/consultor/BannerConsultor.jsx'
@@ -35,6 +43,9 @@ const VISTAS_POR_PESTANA = {
   viabilidad: ViabilidadView,
   configuracion: ConfiguracionView,
 }
+
+/** Búsqueda de historial aún sin resolver. */
+const BUSQUEDA_PENDIENTE = { userId: null, estado: null }
 
 /**
  * Panel en Modo Consultor: el expediente de un cliente, en solo lectura.
@@ -96,7 +107,14 @@ function PanelConsultor({ expedienteId, token }) {
 }
 
 function Enrutador() {
-  const { userId, nombreCompleto, cargando: cargandoSesion, authDisponible } = useAuth()
+  const {
+    userId,
+    nombreCompleto,
+    cargando: cargandoSesion,
+    authDisponible,
+    recuperandoPassword,
+    finalizarRecuperacion,
+  } = useAuth()
 
   /**
    * Parámetros del enlace de consultoría.
@@ -107,39 +125,75 @@ function Enrutador() {
    */
   const [paramsConsultor] = useState(leerParametrosConsultor)
 
+  /**
+   * ¿Se abrió la aplicación desde el enlace del correo de recuperación?
+   *
+   * Se combina con el evento `PASSWORD_RECOVERY` de Supabase: cualquiera de
+   * las dos señales basta para mostrar el cambio de contraseña.
+   */
+  const [enlaceRecuperacion, setEnlaceRecuperacion] = useState(llegoDesdeEnlaceRecuperacion)
+  const mostrandoRecuperacion = enlaceRecuperacion || recuperandoPassword
+
+  /** Modo con el que se abre la pantalla de acceso. */
+  const [modoAcceso, setModoAcceso] = useState('login')
+
   /** Diagnóstico activo. `null` = aún no completado. */
   const [respuestas, setRespuestas] = useState(cargarDiagnosticoLocal)
-  const [buscandoDiagnostico, setBuscandoDiagnostico] = useState(false)
 
   /**
-   * Al iniciar sesión se comprueba si el usuario ya tiene diagnóstico.
+   * Resultado de buscar el historial del usuario en Supabase.
    *
-   * Solo se consulta cuando no hay copia local: si el navegador ya lo
-   * tiene, la consulta no cambiaría el destino y solo añadiría espera antes
-   * de pintar el panel.
+   * Guarda para qué `userId` se resolvió: si en la misma pestaña entra otra
+   * cuenta, la búsqueda anterior no le vale y se repite.
+   */
+  const [busqueda, setBusqueda] = useState(BUSQUEDA_PENDIENTE)
+
+  /**
+   * El usuario ha pulsado "Nuevo diagnóstico".
+   *
+   * Mientras está activo no se recupera el diagnóstico anterior de
+   * Supabase. Sin esta marca, el reinicio dejaba `respuestas` en `null`, la
+   * búsqueda de historial volvía a lanzarse, encontraba el diagnóstico
+   * previo y devolvía al usuario al panel: el botón no hacía nada.
+   */
+  const [nuevoDiagnostico, setNuevoDiagnostico] = useState(false)
+
+  /**
+   * Usuario recurrente: al iniciar sesión (o al cargar con una sesión ya
+   * abierta) se busca su último diagnóstico en Supabase.
+   *
+   *   - Si lo tiene, va directo al panel con sus datos; el cuestionario no
+   *     vuelve a aparecer salvo que pulse "Nuevo diagnóstico".
+   *   - Si no lo tiene, va al cuestionario.
+   *   - Si no se puede saber, se le dice y se le deja reintentar, en lugar
+   *     de mandarle a repetir un cuestionario que quizá ya hizo.
+   *
+   * Solo se consulta cuando no hay copia local: si el navegador ya la
+   * tiene, el destino es el panel igualmente y la consulta solo añadiría
+   * espera antes de pintarlo.
    */
   useEffect(() => {
-    if (!userId || respuestas) return undefined
+    if (!userId || respuestas || nuevoDiagnostico || mostrandoRecuperacion) return undefined
+    if (busqueda.userId === userId) return undefined
 
     let vigente = true
-    setBuscandoDiagnostico(true)
 
-    leerUltimoDiagnostico(userId)
-      .then((previo) => {
-        if (!vigente || !previo) return
+    buscarDiagnosticoPrevio(userId).then((resultado) => {
+      if (!vigente) return
 
-        setRespuestas(previo.respuestas)
-        guardarDiagnosticoLocal(previo.respuestas)
-        guardarExpedienteId(previo.id)
-      })
-      .finally(() => {
-        if (vigente) setBuscandoDiagnostico(false)
-      })
+      if (resultado.estado === 'encontrado') {
+        guardarDiagnosticoLocal(resultado.respuestas)
+        guardarExpedienteId(resultado.id)
+        setRespuestas(resultado.respuestas)
+      }
+
+      setBusqueda({ userId, estado: resultado.estado })
+    })
 
     return () => {
       vigente = false
     }
-  }, [userId, respuestas])
+  }, [userId, respuestas, nuevoDiagnostico, mostrandoRecuperacion, busqueda])
 
   /**
    * Al cerrar sesión se limpia el diagnóstico en memoria y en el navegador.
@@ -151,6 +205,8 @@ function Enrutador() {
     if (!authDisponible || cargandoSesion || userId) return
 
     setRespuestas(null)
+    setBusqueda(BUSQUEDA_PENDIENTE)
+    setNuevoDiagnostico(false)
     borrarDiagnosticoLocal()
     borrarExpedienteId()
     borrarCitaLocal()
@@ -167,6 +223,7 @@ function Enrutador() {
    */
   const handleOnboardingComplete = (nuevas) => {
     setRespuestas(nuevas)
+    setNuevoDiagnostico(false)
     guardarDiagnosticoLocal(nuevas)
     guardarDiagnostico(nuevas)
   }
@@ -177,6 +234,7 @@ function Enrutador() {
    * histórico ya persistido en Supabase no se toca.
    */
   const handleReiniciarOnboarding = () => {
+    setNuevoDiagnostico(true)
     borrarDiagnosticoLocal()
     // El avance de la hoja de ruta pertenece al diagnóstico que se borra:
     // conservarlo dejaría hitos marcados de un plan que ya no existe.
@@ -185,6 +243,14 @@ function Enrutador() {
     borrarCitaLocal()
     borrarExpedienteId()
     setRespuestas(null)
+  }
+
+  /** Sale de la pantalla de recuperación y limpia la URL. */
+  const terminarRecuperacion = (siguienteModoAcceso = 'login') => {
+    salirDeRutaRecuperacion()
+    finalizarRecuperacion()
+    setEnlaceRecuperacion(false)
+    setModoAcceso(siguienteModoAcceso)
   }
 
   // El Modo Consultor se resuelve antes que todo lo demás: el mentor llega
@@ -198,8 +264,25 @@ function Enrutador() {
     )
   }
 
-  // Recuperando la sesión guardada, o buscando el diagnóstico del usuario.
-  if (cargandoSesion || buscandoDiagnostico) {
+  // Cambio de contraseña desde el enlace del correo. Va antes que la
+  // barrera de acceso y que el panel: el enlace abre sesión, y sin esta
+  // prioridad el usuario entraría directo al panel sin poder cambiar la
+  // contraseña que ha olvidado.
+  if (mostrandoRecuperacion) {
+    if (cargandoSesion) return <PantallaCargando mensaje="Verificando el enlace…" />
+
+    return (
+      <RestablecerPasswordView
+        haySesion={Boolean(userId)}
+        errorEnlace={errorDelEnlaceRecuperacion()}
+        onTerminar={() => terminarRecuperacion()}
+        onSolicitarOtroEnlace={() => terminarRecuperacion('recuperar')}
+      />
+    )
+  }
+
+  // Recuperando la sesión guardada.
+  if (cargandoSesion) {
     return <PantallaCargando />
   }
 
@@ -207,10 +290,34 @@ function Enrutador() {
   // de Supabase, se deja pasar para que un clon sin `.env` siga siendo
   // ejecutable en local.
   if (authDisponible && !userId) {
-    return <AuthView />
+    return <AuthView key={modoAcceso} modoInicial={modoAcceso} />
   }
 
   if (respuestas === null) {
+    const busquedaResuelta = busqueda.userId === userId
+
+    // No se pudo saber si tiene diagnóstico: ni panel ni cuestionario.
+    if (userId && !nuevoDiagnostico && busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
+      return (
+        <HistorialNoDisponible
+          motivo={busqueda.estado}
+          onReintentar={() => setBusqueda(BUSQUEDA_PENDIENTE)}
+          onNuevoDiagnostico={() => setNuevoDiagnostico(true)}
+          onCerrarSesion={cerrarSesion}
+        />
+      )
+    }
+
+    // El cuestionario solo aparece cuando está claro que toca: no hay
+    // historial, el usuario pidió uno nuevo, o no hay autenticación. Antes
+    // de saberlo se muestra la carga; si no, el cuestionario asomaría un
+    // instante a un usuario recurrente mientras se consulta su historial.
+    const tocaCuestionario = !userId || nuevoDiagnostico || (busquedaResuelta && busqueda.estado === 'sin-diagnostico')
+
+    if (!tocaCuestionario) {
+      return <PantallaCargando mensaje="Cargando tu panel…" />
+    }
+
     return (
       <OnboardingProvider respuestas={null} onReiniciar={handleReiniciarOnboarding}>
         <OnboardingWizard onComplete={handleOnboardingComplete} />

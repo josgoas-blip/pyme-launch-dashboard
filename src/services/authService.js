@@ -60,7 +60,31 @@ const TRADUCCIONES = [
     fragmento: 'failed to fetch',
     mensaje: 'No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.',
   },
+  {
+    fragmento: 'should be different from the old password',
+    mensaje: 'La nueva contraseña debe ser distinta de la anterior.',
+  },
+  {
+    fragmento: 'auth session missing',
+    mensaje: 'El enlace de recuperación ha caducado o ya se ha usado. Solicita uno nuevo.',
+  },
+  {
+    fragmento: 'weak',
+    mensaje: 'Esa contraseña es demasiado débil o muy común. Elige otra.',
+  },
 ]
+
+/**
+ * Dirección a la que Supabase envía al usuario desde el correo de
+ * recuperación.
+ *
+ * Se puede cambiar por entorno (regla 3 de CLAUDE.md) para apuntar a otro
+ * despliegue. Sea cual sea, debe figurar en Supabase → Authentication →
+ * URL Configuration → Redirect URLs: si no, Supabase ignora `redirectTo`
+ * y manda al usuario a la Site URL.
+ */
+export const URL_RESET_PASSWORD =
+  import.meta.env.VITE_URL_RESET_PASSWORD || 'https://demo.pymelaunch.com/reset-password'
 
 /**
  * Convierte un error de Supabase en un mensaje legible en español.
@@ -239,6 +263,73 @@ export async function registrarse({ email, password, nombre, apellidos, empresa 
       sesion: data.session,
       requiereConfirmacion: !data.session,
     }
+  } catch (e) {
+    return { ok: false, motivo: traducirErrorAuth(e) }
+  }
+}
+
+/** Formato mínimo de correo, el mismo que usa el formulario de acceso. */
+const FORMATO_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+/**
+ * Envía el correo con el enlace para restablecer la contraseña.
+ *
+ * Supabase responde igual exista o no la cuenta —no revela qué correos
+ * están registrados—, así que un éxito aquí significa "solicitud
+ * aceptada", no "la cuenta existe".
+ *
+ * @param {string} email
+ * @returns {Promise<{ ok: boolean, motivo?: string }>}
+ */
+export async function solicitarRecuperacion(email) {
+  if (!haySupabase) return { ok: false, motivo: 'La autenticación no está configurada en esta instalación.' }
+
+  const limpio = email?.trim() ?? ''
+  if (!limpio) return { ok: false, motivo: 'Escribe tu correo electrónico.' }
+  if (!FORMATO_EMAIL.test(limpio)) return { ok: false, motivo: 'El correo no tiene un formato válido.' }
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(limpio, { redirectTo: URL_RESET_PASSWORD })
+    if (error) return { ok: false, motivo: traducirErrorAuth(error) }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, motivo: traducirErrorAuth(e) }
+  }
+}
+
+/**
+ * Comprueba la nueva contraseña antes de enviarla.
+ *
+ * @param {string} password
+ * @param {string} confirmacion
+ * @returns {string|null} Mensaje de error, o `null` si es válida.
+ */
+export function validarNuevaPassword(password, confirmacion) {
+  if (!password) return 'Escribe tu nueva contraseña.'
+  if (password.length < LONGITUD_MINIMA_PASSWORD) {
+    return `La contraseña debe tener al menos ${LONGITUD_MINIMA_PASSWORD} caracteres.`
+  }
+  if (password !== confirmacion) return 'Las dos contraseñas no coinciden.'
+  return null
+}
+
+/**
+ * Guarda la nueva contraseña del usuario.
+ *
+ * Funciona con la sesión que Supabase abre al entrar por el enlace de
+ * recuperación. Sin esa sesión (enlace caducado o ya usado) Supabase
+ * responde "Auth session missing", que se traduce a un mensaje útil.
+ *
+ * @param {string} password
+ * @returns {Promise<{ ok: boolean, motivo?: string }>}
+ */
+export async function actualizarPassword(password) {
+  if (!haySupabase) return { ok: false, motivo: 'La autenticación no está configurada en esta instalación.' }
+
+  try {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) return { ok: false, motivo: traducirErrorAuth(error) }
+    return { ok: true }
   } catch (e) {
     return { ok: false, motivo: traducirErrorAuth(e) }
   }

@@ -25,6 +25,13 @@ export function AuthProvider({ children }) {
   const [sesion, setSesion] = useState(null)
   const [cargando, setCargando] = useState(haySupabase)
   const [perfil, setPerfil] = useState(null)
+  /**
+   * Supabase ha abierto la sesión desde un enlace de recuperación.
+   *
+   * Es una señal de que el usuario viene a cambiar la contraseña que no
+   * depende de en qué ruta haya aterrizado.
+   */
+  const [recuperandoPassword, setRecuperandoPassword] = useState(false)
 
   useEffect(() => {
     if (!haySupabase) return undefined
@@ -42,8 +49,9 @@ export function AuthProvider({ children }) {
         if (vigente) setCargando(false)
       })
 
-    const { data: suscripcion } = supabase.auth.onAuthStateChange((_evento, nuevaSesion) => {
+    const { data: suscripcion } = supabase.auth.onAuthStateChange((evento, nuevaSesion) => {
       if (!vigente) return
+      if (evento === 'PASSWORD_RECOVERY') setRecuperandoPassword(true)
       setSesion(nuevaSesion)
       setCargando(false)
     })
@@ -93,6 +101,8 @@ export function AuthProvider({ children }) {
         nombreCompleto: componerNombreCompleto(perfil, usuario),
         cargando,
         authDisponible: haySupabase,
+        recuperandoPassword,
+        finalizarRecuperacion: () => setRecuperandoPassword(false),
       }}
     >
       {children}
@@ -118,6 +128,8 @@ export function useAuth() {
       nombreCompleto: 'Invitado',
       cargando: false,
       authDisponible: false,
+      recuperandoPassword: false,
+      finalizarRecuperacion: () => {},
     }
   )
 }
