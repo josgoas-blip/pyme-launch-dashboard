@@ -10,6 +10,7 @@
  * que el formulario solo tenga que pintarlos.
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
+import { CAMPOS_EDITABLES, normalizarCambiosPerfil } from './perfilEmpresaService.js'
 
 /** Longitud mínima que exige Supabase por defecto. */
 export const LONGITUD_MINIMA_PASSWORD = 6
@@ -183,24 +184,50 @@ export async function iniciarSesion({ email, password }) {
  * se avisa de ello en vez de dejar al usuario esperando un panel que no va
  * a aparecer.
  *
- * @param {{ email: string, password: string }} credenciales
+ * Los datos de empresa son opcionales: se piden aquí para que la ficha
+ * salga completa desde el primer inicio de sesión, pero un emprendedor en
+ * fase de idea puede no tener todavía razón social ni NIF, y exigirlos le
+ * cerraría la puerta. Lo que deje vacío se envía como `null`.
+ *
+ * @param {{
+ *   email: string,
+ *   password: string,
+ *   nombre: string,
+ *   apellidos: string,
+ *   empresa?: {
+ *     nombre_empresa?: string,
+ *     actividad?: string,
+ *     sector?: string,
+ *     nif?: string,
+ *     tamano_empresa?: string,
+ *   },
+ * }} datos
  * @returns {Promise<{ ok: boolean, sesion?: object, requiereConfirmacion?: boolean, motivo?: string }>}
  */
-export async function registrarse({ email, password, nombre, apellidos }) {
+export async function registrarse({ email, password, nombre, apellidos, empresa = {} }) {
   if (!haySupabase) return { ok: false, motivo: 'La autenticación no está configurada en esta instalación.' }
+
+  // Mismas reglas que la edición de la ficha (recorte, NIF en mayúsculas
+  // sin espacios, longitudes máximas), para que un dato no quede distinto
+  // según se escribiera al registrarse o después.
+  const vacia = Object.fromEntries(CAMPOS_EDITABLES.map((campo) => [campo, '']))
+  const limpia = normalizarCambiosPerfil({ ...vacia, ...empresa })
+  if (!limpia.ok) return { ok: false, motivo: limpia.motivo }
 
   try {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       // Viajan en `options.data`, que Supabase guarda en
-      // `raw_user_meta_data`. Así el nombre está disponible desde el primer
-      // render aunque la fila de `profiles` aún no exista: el disparador
-      // que la crea puede tardar, o no estar configurado todavía.
+      // `raw_user_meta_data`, no en `profiles`. Por eso la ficha lee también
+      // de ahí: así los datos están disponibles desde el primer render
+      // aunque la fila de `profiles` aún no exista, o el disparador que la
+      // rellena no copie estos campos.
       options: {
         data: {
           nombre: nombre?.trim() ?? '',
           apellidos: apellidos?.trim() ?? '',
+          ...limpia.datos,
         },
       },
     })

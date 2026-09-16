@@ -5,6 +5,8 @@ import TarjetaMentor from './TarjetaMentor.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
 import {
   componerFichaEmpresa,
+  datosEmpresaVigentes,
+  normalizarNif,
   leerPerfilEmpresa,
   leerPerfilDeExpediente,
   guardarPerfilEmpresa,
@@ -49,15 +51,16 @@ function formatearAlta(altaRemota, respuestas) {
 const CLASE_CAMPO =
   'w-full rounded-md border border-card-border bg-white px-2 py-1 font-medium text-main outline-none focus:border-primary disabled:opacity-60'
 
-/** Borrador del formulario a partir del perfil guardado. */
-function borradorDesde(perfil) {
-  return {
-    nombre_empresa: perfil?.nombre_empresa ?? '',
-    actividad: perfil?.actividad ?? '',
-    sector: perfil?.sector ?? '',
-    nif: perfil?.nif ?? '',
-    tamano_empresa: perfil?.tamano_empresa ?? '',
-  }
+/**
+ * Borrador del formulario con los datos que la tarjeta está mostrando.
+ *
+ * Parte de los datos vigentes (perfil y, donde falte, lo declarado al
+ * registrarse) y no solo de `profiles`: si el disparador no copió el
+ * registro, abrir el formulario vacío y guardar un único cambio borraría
+ * en la práctica el resto de campos que el usuario sí rellenó.
+ */
+function borradorDesde(perfil, usuario) {
+  return datosEmpresaVigentes({ perfil, usuario })
 }
 
 /**
@@ -98,7 +101,7 @@ export default function PerfilClienteCard() {
   const [cargandoPerfil, setCargandoPerfil] = useState(true)
 
   const [editando, setEditando] = useState(false)
-  const [borrador, setBorrador] = useState(borradorDesde(null))
+  const [borrador, setBorrador] = useState(() => borradorDesde(null, null))
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState(null)
   const [avisoGuardado, setAvisoGuardado] = useState(false)
@@ -166,14 +169,14 @@ export default function PerfilClienteCard() {
   const puedeEditar = !soloLectura && Boolean(userId)
 
   const iniciarEdicion = () => {
-    setBorrador(borradorDesde(perfil))
+    setBorrador(borradorDesde(perfil, usuario))
     setError(null)
     setAvisoGuardado(false)
     setEditando(true)
   }
 
   const cancelar = () => {
-    setBorrador(borradorDesde(perfil))
+    setBorrador(borradorDesde(perfil, usuario))
     setError(null)
     setEditando(false)
   }
@@ -346,7 +349,7 @@ export default function PerfilClienteCard() {
               <input
                 type="text"
                 value={borrador.nif}
-                onChange={actualizarCampo('nif')}
+                onChange={(e) => setBorrador((b) => ({ ...b, nif: normalizarNif(e.target.value) }))}
                 disabled={guardando}
                 maxLength={20}
                 aria-label="NIF / CIF"

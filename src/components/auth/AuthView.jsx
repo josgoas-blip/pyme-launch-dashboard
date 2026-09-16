@@ -1,11 +1,17 @@
 import { useState } from 'react'
-import { Mail, Lock, Loader2, AlertTriangle, MailCheck, Eye, EyeOff, User, Users } from 'lucide-react'
+import { Mail, Lock, Loader2, AlertTriangle, MailCheck, Eye, EyeOff, User, Users, Building2, IdCard } from 'lucide-react'
 import {
   iniciarSesion,
   registrarse,
   validarCredenciales,
   LONGITUD_MINIMA_PASSWORD,
 } from '../../services/authService.js'
+import {
+  normalizarNif,
+  SECTORES_SUGERIDOS,
+  TAMANOS_EMPRESA,
+  TAMANO_POR_DEFECTO,
+} from '../../services/perfilEmpresaService.js'
 
 /* Paleta corporativa, en literales por el mismo motivo que el wizard: esta
    pantalla se pinta antes que nada y no puede quedarse sin contraste si un
@@ -15,6 +21,20 @@ const SUPERFICIE = '#FAF9F5'
 const BORDE = '#E0DCD3'
 const TEXTO = '#1F2937'
 const TEXTO_SUAVE = '#4B5563'
+
+/** Estilo común de los campos, para no repetir la cadena en cada input. */
+const CLASE_INPUT =
+  'w-full rounded-lg border py-2.5 pr-3 text-sm outline-none transition-colors focus:border-[#1B4D3E] disabled:opacity-60'
+const CLASE_ETIQUETA = 'text-xs font-semibold uppercase tracking-wider'
+
+/** Datos de empresa al abrir el formulario: vacíos salvo el tamaño. */
+const EMPRESA_INICIAL = {
+  nombre_empresa: '',
+  actividad: '',
+  sector: '',
+  nif: '',
+  tamano_empresa: TAMANO_POR_DEFECTO,
+}
 
 /**
  * Pantalla de acceso: inicio de sesión y creación de cuenta en el mismo
@@ -30,12 +50,15 @@ export default function AuthView() {
   const [apellidos, setApellidos] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [empresa, setEmpresa] = useState(EMPRESA_INICIAL)
   const [verPassword, setVerPassword] = useState(false)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState(null)
   const [aviso, setAviso] = useState(null)
 
   const esRegistro = modo === 'registro'
+
+  const actualizarEmpresa = (campo) => (e) => setEmpresa((d) => ({ ...d, [campo]: e.target.value }))
 
   const cambiarModo = (nuevo) => {
     setModo(nuevo)
@@ -59,7 +82,7 @@ export default function AuthView() {
 
     setEnviando(true)
     const resultado = esRegistro
-      ? await registrarse({ email, password, nombre, apellidos })
+      ? await registrarse({ email, password, nombre, apellidos, empresa })
       : await iniciarSesion({ email, password })
     setEnviando(false)
 
@@ -250,6 +273,133 @@ export default function AuthView() {
                 </p>
               )}
             </div>
+
+            {/* Datos de la empresa, solo al crear cuenta. Van después de las
+                credenciales: primero lo imprescindible para entrar, luego lo
+                que completa la ficha. Son opcionales porque un proyecto en
+                fase de idea puede no tener aún razón social ni NIF. */}
+            {esRegistro && (
+              <fieldset className="space-y-4 border-t pt-5" style={{ borderColor: BORDE }} disabled={enviando}>
+                <legend className="float-left w-full">
+                  <span className="block text-sm font-bold" style={{ color: TEXTO }}>
+                    Datos de tu empresa
+                  </span>
+                  <span className="mt-0.5 block text-xs" style={{ color: TEXTO_SUAVE }}>
+                    Opcionales. Podrás completarlos o cambiarlos después desde Configuración.
+                  </span>
+                </legend>
+
+                <div className="clear-left">
+                  <label htmlFor="auth-empresa" className={CLASE_ETIQUETA} style={{ color: TEXTO_SUAVE }}>
+                    Nombre comercial / Empresa
+                  </label>
+                  <div className="relative mt-1.5">
+                    <Building2
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                      style={{ color: TEXTO_SUAVE }}
+                      aria-hidden="true"
+                    />
+                    <input
+                      id="auth-empresa"
+                      type="text"
+                      value={empresa.nombre_empresa}
+                      onChange={actualizarEmpresa('nombre_empresa')}
+                      autoComplete="organization"
+                      maxLength={120}
+                      placeholder="Nombre de tu empresa o proyecto"
+                      className={`${CLASE_INPUT} pl-9`}
+                      style={{ borderColor: BORDE, color: TEXTO }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="auth-actividad" className={CLASE_ETIQUETA} style={{ color: TEXTO_SUAVE }}>
+                    Actividad / Descripción
+                  </label>
+                  <textarea
+                    id="auth-actividad"
+                    value={empresa.actividad}
+                    onChange={actualizarEmpresa('actividad')}
+                    rows={2}
+                    maxLength={280}
+                    placeholder="A qué se dedica tu negocio"
+                    className={`${CLASE_INPUT} mt-1.5 resize-none pl-3`}
+                    style={{ borderColor: BORDE, color: TEXTO }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="auth-sector" className={CLASE_ETIQUETA} style={{ color: TEXTO_SUAVE }}>
+                      Sector
+                    </label>
+                    <input
+                      id="auth-sector"
+                      type="text"
+                      list="auth-sectores"
+                      value={empresa.sector}
+                      onChange={actualizarEmpresa('sector')}
+                      maxLength={80}
+                      placeholder="Elige uno o escríbelo"
+                      className={`${CLASE_INPUT} mt-1.5 pl-3`}
+                      style={{ borderColor: BORDE, color: TEXTO }}
+                    />
+                    <datalist id="auth-sectores">
+                      {SECTORES_SUGERIDOS.map((sector) => (
+                        <option key={sector} value={sector} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  <div>
+                    <label htmlFor="auth-nif" className={CLASE_ETIQUETA} style={{ color: TEXTO_SUAVE }}>
+                      NIF / CIF
+                    </label>
+                    <div className="relative mt-1.5">
+                      <IdCard
+                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
+                        style={{ color: TEXTO_SUAVE }}
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="auth-nif"
+                        type="text"
+                        value={empresa.nif}
+                        // Se normaliza al escribir: el usuario ve ya el valor
+                        // tal como quedará guardado.
+                        onChange={(e) => setEmpresa((d) => ({ ...d, nif: normalizarNif(e.target.value) }))}
+                        autoCapitalize="characters"
+                        spellCheck={false}
+                        maxLength={20}
+                        placeholder="B12345678"
+                        className={`${CLASE_INPUT} pl-9`}
+                        style={{ borderColor: BORDE, color: TEXTO }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="auth-tamano" className={CLASE_ETIQUETA} style={{ color: TEXTO_SUAVE }}>
+                    Tamaño de la empresa
+                  </label>
+                  <select
+                    id="auth-tamano"
+                    value={empresa.tamano_empresa}
+                    onChange={actualizarEmpresa('tamano_empresa')}
+                    className={`${CLASE_INPUT} mt-1.5 bg-white pl-3`}
+                    style={{ borderColor: BORDE, color: TEXTO }}
+                  >
+                    {TAMANOS_EMPRESA.map((tamano) => (
+                      <option key={tamano} value={tamano}>
+                        {tamano}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </fieldset>
+            )}
 
             {error && (
               <p

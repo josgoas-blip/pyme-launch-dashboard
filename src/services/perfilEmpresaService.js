@@ -33,28 +33,31 @@ export const RESERVAS_FICHA = {
   tamano: '1-5 empleados',
 }
 
-/** Tramos de plantilla del desplegable de tamaño. */
-export const TAMANOS_EMPRESA = [
-  '1-5 empleados',
-  '6-10 empleados',
-  '11-50 empleados',
-  '51-250 empleados',
-  'Más de 250 empleados',
-]
+/**
+ * Tramos de plantilla del desplegable de tamaño.
+ *
+ * Son los mismos en el registro y en la edición de la ficha. Un valor
+ * guardado con tramos anteriores se sigue mostrando: la tarjeta lo añade
+ * como opción en lugar de descartarlo.
+ */
+export const TAMANOS_EMPRESA = ['1-5 empleados', '6-10 empleados', '11-50 empleados', '+50 empleados']
+
+/** Tramo preseleccionado en el registro. */
+export const TAMANO_POR_DEFECTO = TAMANOS_EMPRESA[0]
 
 /** Sugerencias del campo de sector; se admite cualquier otro texto. */
 export const SECTORES_SUGERIDOS = [
-  'General',
-  'Comercio',
-  'Hostelería y turismo',
+  'B2B Servicios',
+  'Retail',
+  'Hostelería',
+  'Tecnología',
+  'Salud',
+  'Educación',
   'Industria',
   'Construcción',
-  'Servicios profesionales',
-  'Tecnología',
-  'Salud y bienestar',
-  'Educación y formación',
   'Agroalimentario',
-  'Logística y transporte',
+  'Logística',
+  'General',
 ]
 
 /** Longitud máxima por campo, para no aceptar pegados accidentales enormes. */
@@ -78,6 +81,44 @@ const ETIQUETA_CAMPO = {
 /** Cadena recortada, o `''` si no es texto. */
 function texto(valor) {
   return typeof valor === 'string' ? valor.trim() : ''
+}
+
+/**
+ * NIF / CIF en su forma canónica: mayúsculas y sin espacios.
+ *
+ * Se aplica al escribir en el formulario y otra vez antes de guardar, para
+ * que un valor pegado o enviado por otra vía llegue igual de limpio.
+ *
+ * @param {unknown} valor
+ * @returns {string}
+ */
+export function normalizarNif(valor) {
+  return typeof valor === 'string' ? valor.replace(/\s+/g, '').toUpperCase() : ''
+}
+
+/**
+ * Datos de empresa vigentes, campo a campo: el perfil y, donde falte, lo
+ * que el usuario declaró al crear la cuenta.
+ *
+ * Los datos del registro viajan en `options.data` de `signUp`, que Supabase
+ * guarda en `user_metadata` y **no** en `profiles`. Que pasen a `profiles`
+ * depende de un disparador en la base de datos; si no existe o aún no ha
+ * corrido, sin esta reserva la ficha saldría vacía en el primer inicio de
+ * sesión a pesar de que el usuario acaba de rellenarla.
+ *
+ * Se usa también para abrir el formulario de edición: así guardar un solo
+ * cambio no deja vacíos en `profiles` los campos que solo constaban en el
+ * registro.
+ *
+ * @param {{
+ *   perfil?: Record<string, unknown>|null,
+ *   usuario?: { user_metadata?: Record<string, unknown> }|null,
+ * }} fuentes
+ * @returns {Record<string, string>} Un texto por campo editable (`''` si no consta).
+ */
+export function datosEmpresaVigentes({ perfil = null, usuario = null } = {}) {
+  const meta = usuario?.user_metadata ?? {}
+  return Object.fromEntries(CAMPOS_EDITABLES.map((c) => [c, texto(perfil?.[c]) || texto(meta[c])]))
 }
 
 /**
@@ -107,9 +148,10 @@ function texto(valor) {
  * Es pura: no toca red ni almacenamiento, así que la vista del cliente y
  * la del consultor comparten exactamente las mismas reglas de reserva.
  *
- * El nombre sigue la cadena perfil → metadatos del registro → correo. Los
- * metadatos no son un mock: son el nombre que el usuario escribió al
- * registrarse, y cubren el caso de que su fila de `profiles` aún no exista.
+ * El nombre sigue la cadena perfil → metadatos del registro → correo, y los
+ * datos de empresa, perfil → metadatos del registro → texto de reserva. Los
+ * metadatos no son un mock: son lo que el usuario escribió al registrarse, y
+ * cubren el caso de que su fila de `profiles` aún no esté completa.
  *
  * @param {{
  *   perfil?: Record<string, unknown>|null,
@@ -132,16 +174,18 @@ export function componerFichaEmpresa({ perfil = null, usuario = null, respaldo =
     email ||
     'Sin nombre registrado'
 
+  const datos = datosEmpresaVigentes({ perfil, usuario })
+
   const campo = (valor, reserva) => {
     const limpio = texto(valor)
     return [limpio || reserva, Boolean(limpio)]
   }
 
-  const [empresa, empresaRegistrada] = campo(perfil?.nombre_empresa, RESERVAS_FICHA.empresa)
-  const [actividad, actividadRegistrada] = campo(perfil?.actividad, RESERVAS_FICHA.actividad)
-  const [sector, sectorRegistrado] = campo(perfil?.sector, RESERVAS_FICHA.sector)
-  const [nif, nifRegistrado] = campo(perfil?.nif, RESERVAS_FICHA.nif)
-  const [tamano, tamanoRegistrado] = campo(perfil?.tamano_empresa, RESERVAS_FICHA.tamano)
+  const [empresa, empresaRegistrada] = campo(datos.nombre_empresa, RESERVAS_FICHA.empresa)
+  const [actividad, actividadRegistrada] = campo(datos.actividad, RESERVAS_FICHA.actividad)
+  const [sector, sectorRegistrado] = campo(datos.sector, RESERVAS_FICHA.sector)
+  const [nif, nifRegistrado] = campo(datos.nif, RESERVAS_FICHA.nif)
+  const [tamano, tamanoRegistrado] = campo(datos.tamano_empresa, RESERVAS_FICHA.tamano)
 
   return {
     nombreCompleto,
@@ -178,7 +222,7 @@ export function normalizarCambiosPerfil(cambios) {
     if (!cambios || !(campo in cambios)) continue
 
     let valor = texto(cambios[campo])
-    if (campo === 'nif') valor = valor.replace(/\s+/g, '').toUpperCase()
+    if (campo === 'nif') valor = normalizarNif(valor)
 
     if (valor.length > LONGITUD_MAXIMA[campo]) {
       return {
