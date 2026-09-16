@@ -11,7 +11,7 @@ import EstrategiaView from './components/dashboard/EstrategiaView.jsx'
 import ViabilidadView from './components/dashboard/ViabilidadView.jsx'
 import ConfiguracionView from './components/dashboard/ConfiguracionView.jsx'
 import InformeEjecutivo from './components/informe/InformeEjecutivo.jsx'
-import { PlanProvider } from './context/PlanContext.jsx'
+import { PlanProvider, usePlan } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { guardarDiagnostico, buscarDiagnosticoPrevio } from './services/diagnosticoService.js'
@@ -118,6 +118,7 @@ function Enrutador() {
     recuperandoPassword,
     finalizarRecuperacion,
   } = useAuth()
+  const { cargandoPlan } = usePlan()
 
   /**
    * Parámetros del enlace de consultoría.
@@ -378,6 +379,13 @@ function Enrutador() {
     )
   }
 
+  // El panel espera a conocer el plan contratado: con el plan de entrada
+  // aplicado por defecto, quien ha contratado uno superior vería un instante
+  // los muros de pago de Estrategia y Viabilidad.
+  if (cargandoPlan) {
+    return <PantallaCargando mensaje="Cargando tu panel…" />
+  }
+
   return (
     <OnboardingProvider respuestas={respuestas} expediente={expediente} onReiniciar={handleReiniciarOnboarding}>
       {/* La aplicación se oculta al imprimir: el PDF solo lleva el informe.
@@ -399,11 +407,18 @@ function Enrutador() {
 }
 
 export default function App() {
+  /**
+   * En Modo Consultor no se lee el plan del perfil: si en ese navegador
+   * hubiera una sesión abierta, sería el plan de otra cuenta, y el visor ya
+   * usa su propio plan fijo (el completo) anidado dentro.
+   */
+  const [modoConsultor] = useState(() => leerParametrosConsultor().activo)
+
   return (
     <AuthProvider>
-      {/* El plan elegido sobrevive a un F5; el del Modo Consultor, anidado
-          dentro, no persiste y es siempre el completo. */}
-      <PlanProvider planInicial="report" persistir>
+      {/* El plan sale de profiles.plan_contratado del usuario. El del Modo
+          Consultor, anidado dentro, es fijo y siempre el completo. */}
+      <PlanProvider desdePerfil={!modoConsultor}>
         <Enrutador />
       </PlanProvider>
     </AuthProvider>

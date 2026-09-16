@@ -15,6 +15,7 @@
 const CLAVE_PESTANA = 'pyme-launch:pestana:v1'
 const CLAVE_PESTANA_CONSULTOR = 'pyme-launch:pestana-consultor:v1'
 const CLAVE_PLAN = 'pyme-launch:plan:v1'
+const CLAVE_PLAN_CONTRATADO = 'pyme-launch:plan-contratado:v1'
 
 function leer(clave) {
   try {
@@ -69,7 +70,10 @@ export function borrarPestanaActiva() {
 }
 
 /**
- * Plan guardado, si es uno de los permitidos.
+ * Plan elegido en el selector de pruebas, si es uno de los permitidos.
+ *
+ * Es solo una simulación local: el plan real es el de
+ * `profiles.plan_contratado`, que nunca se modifica desde el selector.
  *
  * @param {string[]} permitidos
  * @returns {string|null}
@@ -84,6 +88,42 @@ export function guardarPlan(plan) {
   escribir(CLAVE_PLAN, plan)
 }
 
+/**
+ * Última lectura del plan contratado, asociada a su usuario.
+ *
+ * Tras un F5 permite pintar el panel con el plan correcto al instante
+ * mientras se vuelve a consultar Supabase, en lugar de mostrar una
+ * pantalla de carga o, peor, los muros de pago del plan de entrada. Se
+ * guarda con el `userId` para no aplicar el plan de otra cuenta.
+ *
+ * @param {string|null} userId
+ * @param {string[]} permitidos
+ * @returns {string|null}
+ */
+export function cargarPlanContratadoCache(userId, permitidos) {
+  try {
+    const { userId: dueno, plan } = JSON.parse(leer(CLAVE_PLAN_CONTRATADO) ?? 'null') ?? {}
+    return userId && dueno === userId && permitidos.includes(plan) ? plan : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * @param {string} userId
+ * @param {string} plan
+ */
+export function guardarPlanContratadoCache(userId, plan) {
+  escribir(CLAVE_PLAN_CONTRATADO, JSON.stringify({ userId, plan }))
+}
+
+/** Olvida el plan de pruebas y la copia del plan contratado (al cerrar sesión). */
 export function borrarPlan() {
+  borrar(CLAVE_PLAN)
+  borrar(CLAVE_PLAN_CONTRATADO)
+}
+
+/** Deja de simular un plan y vuelve al contratado. */
+export function borrarPlanPrueba() {
   borrar(CLAVE_PLAN)
 }

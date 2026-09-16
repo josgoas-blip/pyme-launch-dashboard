@@ -5,7 +5,10 @@ import { PLAN_INFO } from '../../utils/planes.js'
 /**
  * Tarjeta de bloqueo (Paywall) reutilizable: icono de candado, mensaje y CTA
  * hacia el plan requerido. El CTA es una simulación local (no hay checkout
- * real todavía): solo actualiza el plan de pruebas del Header.
+ * real todavía): solo actualiza el plan de pruebas del Header, y por eso
+ * solo aparece en modo demo. Fuera de él el plan depende únicamente de
+ * `profiles.plan_contratado`, y un botón que concediera acceso sin pago no
+ * puede existir.
  *
  * @param {{
  *   mensaje: string,
@@ -15,7 +18,7 @@ import { PLAN_INFO } from '../../utils/planes.js'
  * }} props
  */
 export default function PaywallCard({ mensaje, planRequerido, titulo, className = '' }) {
-  const { setPlan } = usePlan()
+  const { setPlan, puedeSimular } = usePlan()
   const nombrePlan = PLAN_INFO[planRequerido].nombre
 
   return (
@@ -27,13 +30,15 @@ export default function PaywallCard({ mensaje, planRequerido, titulo, className 
       </span>
       <p className="text-sm font-bold text-main">{titulo ?? `Contenido de ${nombrePlan}`}</p>
       <p className="text-xs leading-snug text-muted">{mensaje}</p>
-      <button
-        type="button"
-        onClick={() => setPlan(planRequerido)}
-        className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover"
-      >
-        Mejorar a {nombrePlan}
-      </button>
+      {puedeSimular && (
+        <button
+          type="button"
+          onClick={() => setPlan(planRequerido)}
+          className="rounded-full bg-primary px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-hover"
+        >
+          Mejorar a {nombrePlan}
+        </button>
+      )}
     </div>
   )
 }

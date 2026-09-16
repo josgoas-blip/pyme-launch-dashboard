@@ -24,7 +24,7 @@ import { cerrarSesion } from '../../services/authService.js'
  * @param {{ nombreUsuario: string, onAbrirMenu: () => void }} props
  */
 export default function TopBar({ nombreUsuario, onAbrirMenu }) {
-  const { plan, setPlan } = usePlan()
+  const { plan, setPlan, planContratado, simulando, puedeSimular } = usePlan()
   const { respuestas, reiniciarOnboarding } = useOnboarding()
   const { authDisponible } = useAuth()
   const { soloLectura } = useModoLectura()
@@ -69,26 +69,49 @@ export default function TopBar({ nombreUsuario, onAbrirMenu }) {
           {/* En Modo Consultor se ocultan las acciones de cliente: el
               selector de plan, el reinicio del diagnóstico y el cierre de
               sesión. El mentor no tiene cuenta ni debe poder alterar el
-              expediente que está revisando. */}
-          {!soloLectura && (
+              expediente que está revisando.
+
+              El selector, además, solo existe en modo demo: simula planes en
+              local para probar los bloqueos, sin tocar
+              profiles.plan_contratado. Un punto marca el plan contratado. */}
+          {!soloLectura && puedeSimular && (
             <div
               className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 p-1"
-              title="Selector temporal de pruebas — simula el plan contratado"
+              title={
+                simulando
+                  ? 'Modo prueba: estás simulando un plan distinto del contratado'
+                  : 'Selector de pruebas — simula otro plan sin cambiar el contratado'
+              }
             >
-              <FlaskConical className="ml-1.5 h-3.5 w-3.5 shrink-0 text-[#4B5563]" />
-              {PLANES.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPlan(p)}
-                  aria-pressed={plan === p}
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
-                    plan === p ? 'bg-primary text-white' : 'text-[#4B5563] hover:text-[#1F2937]'
-                  }`}
-                >
-                  {PLAN_INFO[p].nombre}
-                </button>
-              ))}
+              <FlaskConical
+                className={`ml-1.5 h-3.5 w-3.5 shrink-0 ${simulando ? 'text-amber-600' : 'text-[#4B5563]'}`}
+              />
+              {PLANES.map((p) => {
+                const contratado = p === planContratado
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPlan(p)}
+                    aria-pressed={plan === p}
+                    title={contratado ? `${PLAN_INFO[p].nombre} · plan contratado` : `Simular ${PLAN_INFO[p].nombre}`}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                      plan === p ? 'bg-primary text-white' : 'text-[#4B5563] hover:text-[#1F2937]'
+                    }`}
+                  >
+                    {PLAN_INFO[p].nombre}
+                    {contratado && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${plan === p ? 'bg-white' : 'bg-primary'}`}
+                        />
+                        <span className="sr-only">(contratado)</span>
+                      </>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           )}
 
