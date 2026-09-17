@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, History, ShieldCheck } from 'lucide-react'
 import { prepararCuestionario, respuestasCambiadas } from '../../utils/reevaluacionDiagnostico.js'
 import { Card } from '../ui/Card.jsx'
@@ -743,6 +743,21 @@ export default function OnboardingWizard({
 
   const bloqueActual = paso > PASO_CONSENTIMIENTO && paso < PASO_FINAL ? BLOQUES[paso - 1] : null
 
+  /**
+   * Cada cambio de pantalla (iniciar, avanzar, retroceder o saltar a un
+   * bloque) vuelve arriba, para empezar por la primera pregunta del bloque y
+   * no al final de la página, donde quedaba el botón pulsado.
+   *
+   * Va en un efecto y no en los manejadores de los botones: se ejecuta
+   * después de pintar el bloque nuevo, cuando la página ya tiene su altura
+   * definitiva. Quien tiene activada la reducción de movimiento en su
+   * sistema salta arriba sin animación.
+   */
+  useEffect(() => {
+    const sinAnimacion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({ top: 0, behavior: sinAnimacion ? 'auto' : 'smooth' })
+  }, [paso])
+
   const irAtras = () => setPaso((actual) => Math.max(PASO_CONSENTIMIENTO, actual - 1))
   const irAdelante = () => setPaso((actual) => Math.min(PASO_FINAL, actual + 1))
 
@@ -784,7 +799,6 @@ export default function OnboardingWizard({
   const irAPaso = (destino) => {
     if (destino === PASO_FINAL && hayErrores) return
     setPaso(destino)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   /** Normaliza los tipos y añade score, fase y dimensiones al payload. */
