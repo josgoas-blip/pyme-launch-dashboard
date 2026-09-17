@@ -16,8 +16,16 @@ const WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL
 /** ¿Hay webhook configurado? Si no, el chat degrada a respuestas locales. */
 export const hayWebhookAgente = Boolean(WEBHOOK_URL)
 
-/** Corta la espera si n8n no responde (el flujo con LLM puede tardar). */
-const TIEMPO_MAXIMO_MS = 20000
+/**
+ * Espera máxima a la respuesta del agente.
+ *
+ * El workflow de n8n encadena razonamiento y memoria del modelo y tarda de
+ * forma habitual entre 20 y 25 segundos. Con el límite anterior (20 s) el
+ * navegador cortaba la petición justo cuando la respuesta estaba a punto de
+ * llegar. 60 s deja margen para las respuestas más lentas sin dejar al
+ * usuario esperando indefinidamente si el flujo se cuelga.
+ */
+export const TIEMPO_MAXIMO_MS = 60000
 
 if (!hayWebhookAgente) {
   console.warn(

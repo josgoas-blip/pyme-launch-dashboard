@@ -137,18 +137,50 @@ function Burbuja({ autor, texto, esAviso }) {
   )
 }
 
-/** Indicador de "escribiendo…" mientras se simula la respuesta. */
+/** Segundos tras los que se avisa de que la respuesta puede tardar. */
+const AVISO_ESPERA_LARGA_S = 8
+
+/**
+ * Indicador de espera mientras el consultor prepara la respuesta.
+ *
+ * Permanece visible durante toda la consulta. El flujo de n8n tarda de
+ * forma habitual 20-25 segundos, y tres puntos animados sin más hacían
+ * pensar que el chat se había quedado colgado: por eso dice qué ocurre y,
+ * pasados unos segundos, que es normal que tarde.
+ *
+ * Es una región `status`: un lector de pantalla anuncia el texto, cosa que
+ * no ocurría con el `aria-label` que llevaba antes sobre un `div`.
+ */
 function Escribiendo() {
+  const [segundos, setSegundos] = useState(0)
+
+  useEffect(() => {
+    const intervalo = setInterval(() => setSegundos((s) => s + 1), 1000)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  const esperaLarga = segundos >= AVISO_ESPERA_LARGA_S
+
   return (
     <div className="flex justify-start">
-      <div className="flex items-center gap-1 rounded-xl bg-canvas px-3 py-2.5" aria-label="El consultor está escribiendo">
-        {[0, 150, 300].map((retardo) => (
-          <span
-            key={retardo}
-            className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted"
-            style={{ animationDelay: `${retardo}ms` }}
-          />
-        ))}
+      <div role="status" className="max-w-[85%] rounded-xl bg-canvas px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="flex items-center gap-1" aria-hidden="true">
+            {[0, 150, 300].map((retardo) => (
+              <span
+                key={retardo}
+                className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted"
+                style={{ animationDelay: `${retardo}ms` }}
+              />
+            ))}
+          </span>
+          <span className="text-xs font-semibold text-main">Consultor pensando…</span>
+        </div>
+        {esperaLarga && (
+          <p className="mt-1 text-[11px] leading-snug text-muted">
+            Está analizando tu diagnóstico. Puede tardar hasta un minuto.
+          </p>
+        )}
       </div>
     </div>
   )
