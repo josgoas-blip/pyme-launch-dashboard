@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useModoLectura } from '../context/ModoLecturaContext.jsx'
-import { leerDashboardProyecto, marcarHito } from '../services/proyectoService.js'
+import { leerDashboardProyecto, marcarHito, registrarSnapshot } from '../services/proyectoService.js'
 import {
   evaluarMetricas,
   normalizarHitos,
@@ -22,6 +22,9 @@ import {
  *                    no un usuario, así que no hay proyecto que consultar
  *                    sin arriesgarse a mostrar el de otra cuenta.
  *
+ * `guardarMetricas` registra una medición nueva (INSERT, nunca UPDATE) y
+ * la aplica al estado con la fila que devuelve Supabase.
+ *
  * `alternarHito` marca o desmarca un hito con actualización optimista: la
  * casilla cambia al instante y, si Supabase rechaza el cambio, vuelve a su
  * estado anterior y se expone el motivo en `errorHito`.
@@ -36,6 +39,7 @@ import {
  *   errorHito: string|null,
  *   recargar: () => void,
  *   alternarHito: (id: string) => Promise<void>,
+ *   guardarMetricas: (fila: Record<string, number|null>) => Promise<{ ok: boolean, motivo?: string }>,
  * }}
  */
 export function useProjectDashboard() {
@@ -116,6 +120,29 @@ export function useProjectDashboard() {
     if (guardado) setLectura((actual) => ({ ...actual, hitos: conCambio(actual.hitos, guardado) }))
   }, [])
 
+  /** Id del proyecto activo, legible desde el callback sin recrearlo. */
+  const proyectoIdRef = useRef(null)
+  proyectoIdRef.current = lectura.proyecto?.id ?? null
+
+  /**
+   * Registra una medición nueva y la aplica al estado.
+   *
+   * Se usa la fila que devuelve Supabase y no los valores del formulario:
+   * así la tarjeta muestra exactamente lo guardado, fecha del servidor
+   * incluida, y la evaluación (sana / vigilar / riesgo) se recalcula sola.
+   * No hace falta otra consulta al servidor.
+   *
+   * @param {Record<string, number|null>} fila - Salida de `validarMetricas`.
+   * @returns {Promise<{ ok: boolean, motivo?: string }>}
+   */
+  const guardarMetricas = useCallback(async (fila) => {
+    const resultado = await registrarSnapshot(proyectoIdRef.current, fila)
+    if (!resultado.ok) return resultado
+
+    setLectura((actual) => ({ ...actual, snapshot: normalizarSnapshot(resultado.snapshot) }))
+    return { ok: true }
+  }, [])
+
   const metricas = useMemo(() => evaluarMetricas(lectura.snapshot), [lectura.snapshot])
 
   return {
@@ -128,5 +155,6 @@ export function useProjectDashboard() {
     errorHito,
     recargar,
     alternarHito,
+    guardarMetricas,
   }
 }

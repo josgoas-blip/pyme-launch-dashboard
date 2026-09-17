@@ -73,7 +73,9 @@ export async function leerDashboardProyecto(userId) {
       .order('is_active', { ascending: false, nullsFirst: false })
       .order('updated_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false })
-      .order('created_at', { referencedTable: 'metric_snapshots', ascending: false })
+      // Sin `nullsFirst: false`, en orden descendente PostgreSQL pone primero las
+      // filas sin fecha, y una medición sin `created_at` taparía a la última.
+      .order('created_at', { referencedTable: 'metric_snapshots', ascending: false, nullsFirst: false })
       .limit(1, { referencedTable: 'metric_snapshots' })
       .order('created_at', { referencedTable: 'project_milestones', ascending: true })
       .limit(1)
@@ -126,5 +128,60 @@ export async function marcarHito(hitoId, completado) {
     return { ok: true, hito: data[0] }
   } catch {
     return { ok: false, motivo: 'Sin conexión: el cambio no se ha guardado.' }
+  }
+}
+
+/** Columnas del snapshot que se piden de vuelta tras insertarlo. */
+const COLUMNAS_SNAPSHOT =
+  'id, created_at, personal_runway_months, avg_collection_days, quote_conversion_rate, capacity_utilization_pct, top_client_revenue_pct'
+
+/**
+ * Registra una nueva medición de métricas del proyecto.
+ *
+ * Siempre inserta, nunca actualiza: cada medición es una fila nueva, así se
+ * conserva el histórico y se puede representar la evolución. La fecha la
+ * pone la base de datos (`created_at`), no el reloj del navegador.
+ *
+ * Se pide la fila de vuelta para pintar al instante lo que realmente quedó
+ * guardado. Si RLS rechaza la inserción, PostgREST devuelve error y no se
+ * escribe nada.
+ *
+ * @param {string} projectId
+ * @param {Record<string, number|null>} fila - Salida de `validarMetricas`.
+ * @returns {Promise<{ ok: true, snapshot: Record<string, unknown> } | { ok: false, motivo: string }>}
+ */
+export async function registrarSnapshot(projectId, fila) {
+  if (!haySupabase) return { ok: false, motivo: 'La base de datos no está configurada.' }
+  if (!projectId) return { ok: false, motivo: 'No hay un proyecto activo al que asociar la medición.' }
+
+  const cancelacion = new AbortController()
+  const temporizador = setTimeout(() => cancelacion.abort(), TIEMPO_MAXIMO_MS)
+
+  try {
+    const { data, error } = await supabase
+      .from('metric_snapshots')
+      .insert({ ...fila, project_id: projectId })
+      .select(COLUMNAS_SNAPSHOT)
+      .abortSignal(cancelacion.signal)
+      .single()
+
+    if (error) {
+      // 42501: la política RLS no permite insertar en este proyecto.
+      const motivo =
+        error.code === '42501'
+          ? 'No tienes permiso para registrar métricas en este proyecto.'
+          : 'No se ha podido guardar la medición. Inténtalo de nuevo.'
+      return { ok: false, motivo }
+    }
+
+    return { ok: true, snapshot: data }
+  } catch (e) {
+    const motivo =
+      e?.name === 'AbortError'
+        ? 'El servidor ha tardado demasiado en responder. Comprueba tu conexión.'
+        : 'Sin conexión: la medición no se ha guardado.'
+    return { ok: false, motivo }
+  } finally {
+    clearTimeout(temporizador)
   }
 }

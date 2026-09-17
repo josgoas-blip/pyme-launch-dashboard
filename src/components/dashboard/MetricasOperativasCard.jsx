@@ -1,7 +1,12 @@
-import { AlertTriangle, CheckCircle2, CircleDashed, Info, RotateCw } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, CheckCircle2, CircleDashed, Info, PencilLine, RotateCw } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
 import PistaTermino from '../ui/PistaTermino.jsx'
 import { explicar } from '../../utils/glosario.js'
+import ActualizarMetricasModal from './ActualizarMetricasModal.jsx'
+
+/** Tiempo que permanece visible la confirmación de guardado. */
+const DURACION_AVISO_MS = 5000
 
 /**
  * Presentación de cada estado. El icono acompaña siempre al color: el
@@ -66,10 +71,23 @@ function TarjetaMetrica({ metrica }) {
  * Nunca inventa cifras: sin proyecto o sin snapshot lo dice, y una métrica
  * sin valor se muestra como "Sin registrar".
  *
+ * El botón "Actualizar métricas" abre un modal que registra una medición
+ * nueva (siempre una fila nueva en `metric_snapshots`). Al guardar, el hook
+ * aplica la fila devuelta y la tarjeta se repinta con las cifras y los
+ * estados nuevos sin recargar.
+ *
  * @param {{ datos: ReturnType<typeof import('../../hooks/useProjectDashboard.js').useProjectDashboard> }} props
  */
 export default function MetricasOperativasCard({ datos }) {
-  const { estado, proyecto, snapshot, metricas, recargar } = datos
+  const { estado, proyecto, snapshot, metricas, recargar, guardarMetricas } = datos
+  const [editando, setEditando] = useState(false)
+  const [aviso, setAviso] = useState(null)
+
+  useEffect(() => {
+    if (!aviso) return undefined
+    const temporizador = setTimeout(() => setAviso(null), DURACION_AVISO_MS)
+    return () => clearTimeout(temporizador)
+  }, [aviso])
 
   // En Modo Consultor el enlace no identifica al usuario del proyecto.
   if (estado === 'no-disponible') return null
@@ -82,6 +100,42 @@ export default function MetricasOperativasCard({ datos }) {
       </div>
       {extra}
     </div>
+  )
+
+  /** Botón de la cabecera: solo con un proyecto al que asociar la medición. */
+  const botonActualizar = (
+    <button
+      type="button"
+      onClick={() => {
+        setAviso(null)
+        setEditando(true)
+      }}
+      aria-haspopup="dialog"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-card-border bg-white px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+    >
+      <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+      {snapshot ? 'Actualizar métricas' : 'Registrar métricas'}
+    </button>
+  )
+
+  const modal = editando && (
+    <ActualizarMetricasModal
+      snapshot={snapshot}
+      nombreProyecto={proyecto?.nombre ?? null}
+      onGuardar={guardarMetricas}
+      onCerrar={() => setEditando(false)}
+      onGuardado={() => {
+        setEditando(false)
+        setAviso('Medición registrada. Las métricas ya muestran los nuevos valores.')
+      }}
+    />
+  )
+
+  const confirmacion = aviso && (
+    <p role="status" className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-green-700">
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      {aviso}
+    </p>
   )
 
   if (estado === 'cargando') {
@@ -131,7 +185,9 @@ export default function MetricasOperativasCard({ datos }) {
       <Card>
         {encabezado(
           `${contexto}. Aún no se ha registrado ninguna medición de métricas para este proyecto.`,
+          botonActualizar,
         )}
+        {modal}
       </Card>
     )
   }
@@ -142,12 +198,17 @@ export default function MetricasOperativasCard({ datos }) {
     <Card>
       {encabezado(
         `${contexto}${fecha ? ` · medición del ${fecha}` : ''}`,
-        enRiesgo > 0 ? (
-          <Badge className="shrink-0 bg-red-100 text-red-700">
-            {enRiesgo} {enRiesgo === 1 ? 'métrica en riesgo' : 'métricas en riesgo'}
-          </Badge>
-        ) : null,
+        <div className="flex flex-wrap items-center gap-2">
+          {enRiesgo > 0 && (
+            <Badge className="shrink-0 bg-red-100 text-red-700">
+              {enRiesgo} {enRiesgo === 1 ? 'métrica en riesgo' : 'métricas en riesgo'}
+            </Badge>
+          )}
+          {botonActualizar}
+        </div>,
       )}
+
+      {confirmacion}
 
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {metricas.map((metrica) => (
@@ -158,6 +219,8 @@ export default function MetricasOperativasCard({ datos }) {
       <p className="mt-3 text-[11px] text-[#4B5563]">
         Umbrales orientativos para un negocio pequeño de servicios; ajústalos a tu sector.
       </p>
+
+      {modal}
     </Card>
   )
 }

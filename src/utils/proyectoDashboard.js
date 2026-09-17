@@ -221,3 +221,107 @@ export function normalizarProyecto(fila) {
     marcadoActivo: fila.is_active === true,
   }
 }
+
+// ── Formulario de actualización de métricas ──────────────────────────
+
+/**
+ * Campos del formulario de actualización, en el orden en que se muestran.
+ *
+ * `tipo` decide la validación:
+ *   - 'entero'     número entero >= 0 (las dos columnas son `integer`).
+ *   - 'porcentaje' número entre 0 y 100, con hasta dos decimales (las
+ *                  columnas son `numeric`).
+ *
+ * `columna` es la de `metric_snapshots`; `clave`, la del snapshot
+ * normalizado de donde se precarga el valor.
+ */
+export const CAMPOS_METRICAS = [
+  { id: 'runway', clave: 'runwayPersonalMeses', columna: 'personal_runway_months', etiqueta: 'Runway personal', unidad: 'meses', tipo: 'entero' },
+  { id: 'cobro', clave: 'diasMediosCobro', columna: 'avg_collection_days', etiqueta: 'Días medios de cobro', unidad: 'días', tipo: 'entero' },
+  { id: 'conversion', clave: 'conversionPresupuestosPct', columna: 'quote_conversion_rate', etiqueta: 'Conversión de presupuestos', unidad: '%', tipo: 'porcentaje' },
+  { id: 'capacidad', clave: 'utilizacionCapacidadPct', columna: 'capacity_utilization_pct', etiqueta: 'Utilización de capacidad', unidad: '%', tipo: 'porcentaje' },
+  { id: 'concentracion', clave: 'concentracionClientePct', columna: 'top_client_revenue_pct', etiqueta: 'Peso del cliente principal', unidad: '%', tipo: 'porcentaje' },
+]
+
+/** Redondeo sin arrastrar errores de coma flotante (14,3 / 100 → 0,143). */
+function redondear(valor, decimales) {
+  return Number(valor.toFixed(decimales))
+}
+
+/**
+ * Valores iniciales del formulario a partir del último snapshot.
+ *
+ * Se entregan como texto, que es lo que maneja un `<input>`. La conversión
+ * ya llega en 0-100 desde `normalizarSnapshot`, así que el usuario siempre
+ * ve y escribe porcentajes, sea cual sea la escala guardada. Un valor que
+ * no consta queda vacío.
+ *
+ * @param {SnapshotMetricas|null} snapshot
+ * @returns {Record<string, string>} Texto por `id` de campo.
+ */
+export function borradorDesdeSnapshot(snapshot) {
+  return Object.fromEntries(
+    CAMPOS_METRICAS.map((campo) => {
+      const valor = snapshot?.[campo.clave]
+      if (valor === null || valor === undefined) return [campo.id, '']
+      const mostrado = campo.tipo === 'porcentaje' ? redondear(valor, 2) : valor
+      return [campo.id, String(mostrado).replace('.', ',')]
+    }),
+  )
+}
+
+/**
+ * Valida el formulario y construye la fila para `metric_snapshots`.
+ *
+ * Un campo vacío se guarda como `null` ("no lo he medido esta vez"): es
+ * más honesto que obligar a escribir una cifra que el usuario no tiene. Al
+ * menos una métrica debe tener valor; una medición vacía no aporta nada al
+ * histórico.
+ *
+ * `quote_conversion_rate` se guarda como fracción 0-1 (35 % → 0,35). Es el
+ * único formato que la lectura interpreta sin ambigüedad: si se guardara
+ * el porcentaje, una conversión del 1 % se escribiría como 1 y se leería
+ * como 100 %.
+ *
+ * @param {Record<string, string>} borrador - Texto por `id` de campo.
+ * @returns {{ ok: true, fila: Record<string, number|null> } | { ok: false, errores: Record<string, string>, general?: string }}
+ */
+export function validarMetricas(borrador) {
+  const errores = {}
+  const fila = {}
+
+  for (const campo of CAMPOS_METRICAS) {
+    const bruto = texto(borrador?.[campo.id])
+
+    if (!bruto) {
+      fila[campo.columna] = null
+      continue
+    }
+
+    // Se acepta coma o punto decimal; cualquier otro carácter es un error,
+    // no algo que corregir en silencio.
+    const normalizado = bruto.replace(',', '.')
+    const valor = /^-?\d+(\.\d+)?$/.test(normalizado) ? Number(normalizado) : NaN
+
+    if (!Number.isFinite(valor)) {
+      errores[campo.id] = 'Escribe un número.'
+    } else if (campo.tipo === 'entero') {
+      if (!Number.isInteger(valor)) errores[campo.id] = 'Debe ser un número entero.'
+      else if (valor < 0) errores[campo.id] = 'No puede ser negativo.'
+      else fila[campo.columna] = valor
+    } else if (valor < 0 || valor > 100) {
+      errores[campo.id] = 'Debe estar entre 0 y 100.'
+    } else {
+      const porcentaje = redondear(valor, 2)
+      fila[campo.columna] = campo.columna === 'quote_conversion_rate' ? redondear(porcentaje / 100, 6) : porcentaje
+    }
+  }
+
+  if (Object.keys(errores).length > 0) return { ok: false, errores }
+
+  if (CAMPOS_METRICAS.every((campo) => fila[campo.columna] === null)) {
+    return { ok: false, errores: {}, general: 'Rellena al menos una métrica para registrar la medición.' }
+  }
+
+  return { ok: true, fila }
+}
