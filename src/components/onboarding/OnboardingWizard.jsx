@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CheckCircle2, History, ShieldCheck } from 'lucide-react'
 import { prepararCuestionario, respuestasCambiadas } from '../../utils/reevaluacionDiagnostico.js'
 import { Card } from '../ui/Card.jsx'
@@ -88,6 +88,43 @@ export const BLOQUES = [
     preguntas: [...preguntasDelBloque(4), ...CAMPOS_FINANCIEROS],
   },
 ]
+
+/**
+ * Lleva la vista al principio de la página de forma inmediata.
+ *
+ * Se aplica a todos los sitios donde puede acumularse el scroll:
+ *   - La ventana y `document.documentElement` / `document.body` (según el
+ *     navegador, el scroll del documento vive en uno u otro).
+ *   - Cualquier ancestro del cuestionario con scroll propio. Hoy no hay
+ *     ninguno (ningún contenedor usa overflow-y-auto ni altura fija), pero
+ *     si un layout futuro lo añadiera, el cuestionario seguiría subiendo.
+ *   - Cualquier elemento dentro del propio cuestionario que se haya
+ *     desplazado.
+ *
+ * Es inmediato a propósito: el desplazamiento suave se cancela si otra cosa
+ * mueve la página mientras anima (un cambio de altura, el foco) y el usuario
+ * se quedaba abajo, en la posición del botón que había pulsado.
+ *
+ * @param {HTMLElement|null} raiz - Elemento raíz del cuestionario.
+ */
+function subirAlInicio(raiz) {
+  try {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+  } catch {
+    // Navegadores que no reconocen 'instant' lanzan con el objeto de opciones.
+    window.scrollTo(0, 0)
+  }
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+
+  for (let elemento = raiz?.parentElement; elemento; elemento = elemento.parentElement) {
+    if (elemento.scrollTop > 0) elemento.scrollTop = 0
+  }
+  if (raiz) {
+    raiz.scrollTop = 0
+    for (const elemento of raiz.querySelectorAll('main, [data-scroll]')) elemento.scrollTop = 0
+  }
+}
 
 /** Índices de paso: 0 = consentimiento, 1..4 = bloques, 5 = pantalla final. */
 const PASO_CONSENTIMIENTO = 0
@@ -748,14 +785,22 @@ export default function OnboardingWizard({
    * bloque) vuelve arriba, para empezar por la primera pregunta del bloque y
    * no al final de la página, donde quedaba el botón pulsado.
    *
-   * Va en un efecto y no en los manejadores de los botones: se ejecuta
-   * después de pintar el bloque nuevo, cuando la página ya tiene su altura
-   * definitiva. Quien tiene activada la reducción de movimiento en su
-   * sistema salta arriba sin animación.
+   * Va en un efecto y no en los manejadores de los botones, y además tras
+   * un `setTimeout`: se ejecuta cuando el bloque nuevo ya está pintado y la
+   * página tiene su altura definitiva. Un segundo intento poco después cubre
+   * el caso de que algo ajuste la altura justo a continuación (fuentes,
+   * imágenes). Se usa `setTimeout` y no `requestAnimationFrame` porque este
+   * último no se dispara mientras la página no se pinta (pestaña en segundo
+   * plano), y el scroll quedaría pendiente.
    */
+  const raizCuestionario = useRef(null)
   useEffect(() => {
-    const sinAnimacion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    window.scrollTo({ top: 0, behavior: sinAnimacion ? 'auto' : 'smooth' })
+    const inmediato = setTimeout(() => subirAlInicio(raizCuestionario.current), 0)
+    const tardio = setTimeout(() => subirAlInicio(raizCuestionario.current), 120)
+    return () => {
+      clearTimeout(inmediato)
+      clearTimeout(tardio)
+    }
   }, [paso])
 
   const irAtras = () => setPaso((actual) => Math.max(PASO_CONSENTIMIENTO, actual - 1))
@@ -843,7 +888,7 @@ export default function OnboardingWizard({
   const penalizaciones = resultado.penalizaciones ?? []
 
   return (
-    <div className="flex min-h-screen flex-col bg-canvas">
+    <div ref={raizCuestionario} className="onboarding-container flex min-h-screen flex-col bg-canvas">
       {/* Cabecera sobria: solo marca, sin navegación (el Dashboard aún no está visible) */}
       <header className="bg-primary text-white">
         <div className="mx-auto flex max-w-2xl items-center gap-3 px-6 py-5">
