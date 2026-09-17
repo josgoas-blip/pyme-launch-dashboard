@@ -242,3 +242,28 @@ function avisar(resultado) {
   console.warn(`[Supabase] No se ha actualizado overall_score del proyecto (${resultado.motivo}).`)
   return resultado
 }
+
+/**
+ * ¿Tiene el usuario algún proyecto registrado?
+ *
+ * Lo usa el enrutado al iniciar sesión: un usuario con proyecto ya es un
+ * cliente existente, y no debe ver el cuestionario de bienvenida aunque aún
+ * no tenga diagnóstico. Solo se pide un `id`: basta con saber si existe.
+ *
+ * Un error se distingue de "no tiene": tratar un fallo como "sin proyecto"
+ * podría llevar al cuestionario a quien sí lo tiene.
+ *
+ * @param {string|null} userId
+ * @returns {Promise<'si'|'no'|'error'>}
+ */
+export async function tieneProyecto(userId) {
+  if (!haySupabase || !userId) return 'no'
+
+  try {
+    const { data, error } = await supabase.from('projects').select('id').eq('user_id', userId).limit(1)
+    if (error) return 'error'
+    return data?.length ? 'si' : 'no'
+  } catch {
+    return 'error'
+  }
+}

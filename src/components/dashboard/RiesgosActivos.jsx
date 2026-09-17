@@ -37,6 +37,18 @@ export default function RiesgosActivos({ riesgos }) {
   const lista = riesgos ?? []
   const criticos = contarCriticos(lista)
 
+  // Sin diagnóstico no se puede afirmar que no haya riesgos.
+  if (riesgos === null) {
+    return (
+      <Card>
+        <CardTitle>Riesgos críticos activos</CardTitle>
+        <p className="mt-3 text-sm text-[#4B5563]">
+          Completa el diagnóstico para ver qué riesgos críticos tiene tu proyecto.
+        </p>
+      </Card>
+    )
+  }
+
   if (lista.length === 0) {
     return (
       <Card>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AppLayout from './components/layout/AppLayout.jsx'
 import AuthView from './components/auth/AuthView.jsx'
 import PantallaCargando from './components/auth/PantallaCargando.jsx'
@@ -16,7 +16,13 @@ import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { guardarDiagnostico, buscarDiagnosticoPrevio } from './services/diagnosticoService.js'
 import { cerrarSesion } from './services/authService.js'
-import { actualizarPuntuacionProyecto } from './services/proyectoService.js'
+import { actualizarPuntuacionProyecto, tieneProyecto } from './services/proyectoService.js'
+import {
+  cargarDiagnosticoPendiente,
+  guardarDiagnosticoPendiente,
+  borrarDiagnosticoPendiente,
+} from './utils/persistenciaPendientes.js'
+import { AvisoSincronizacion, DiagnosticoPendiente } from './components/dashboard/AvisosPanel.jsx'
 import {
   cargarDiagnosticoLocal,
   guardarDiagnosticoLocal,
@@ -47,6 +53,12 @@ const VISTAS_POR_PESTANA = {
   viabilidad: ViabilidadView,
   configuracion: ConfiguracionView,
 }
+
+/**
+ * Pestañas que se calculan por completo a partir del diagnóstico. Sin él no
+ * se pintan: el adaptador devolvería datos de ejemplo.
+ */
+const PESTANAS_DE_DIAGNOSTICO = ['analisis', 'estrategia', 'viabilidad']
 
 /** Búsqueda de historial aún sin resolver. */
 const BUSQUEDA_PENDIENTE = { userId: null, estado: null }
@@ -192,6 +204,67 @@ function Enrutador() {
   const [reevaluacion, setReevaluacion] = useState(null)
 
   /**
+   * Estado de la subida del diagnóstico a Supabase.
+   *
+   *   - `{ estado: 'ok' }`: guardado o sin nada que subir.
+   *   - `{ estado: 'guardando' }`
+   *   - `{ estado: 'error', motivo }`: solo está en este navegador. El panel
+   *     lo avisa y ofrece reintentar, en lugar de fallar en silencio como
+   *     antes (el usuario solo lo descubría al cerrar sesión y ver otra vez
+   *     el cuestionario).
+   */
+  const [sincronizacion, setSincronizacion] = useState({ estado: 'ok' })
+
+  /** `userId` legible desde callbacks estables. */
+  const userIdRef = useRef(userId)
+  userIdRef.current = userId
+
+  /**
+   * Sube un diagnóstico a Supabase.
+   *
+   * Antes de intentarlo lo deja registrado como pendiente para esta cuenta:
+   * si la subida falla y el usuario cierra sesión, al volver a entrar se
+   * recupera y se reintenta, en lugar de perderse con la copia del
+   * navegador. Cuando Supabase confirma, se borra de pendientes, se
+   * incorpora el id del expediente y se actualiza la puntuación del
+   * proyecto activo.
+   */
+  const subirDiagnostico = useCallback((nuevas) => {
+    const uid = userIdRef.current
+    guardarDiagnosticoPendiente(uid, nuevas)
+    setSincronizacion({ estado: 'guardando' })
+
+    return guardarDiagnostico(nuevas).then((resultado) => {
+      if (!resultado?.ok) {
+        setSincronizacion({ estado: 'error', motivo: resultado?.motivo ?? 'error desconocido' })
+        return resultado
+      }
+
+      borrarDiagnosticoPendiente(uid, nuevas)
+      setSincronizacion({ estado: 'ok' })
+
+      // El id se incorpora solo si el panel sigue mostrando esta evaluación.
+      if (resultado.id) {
+        setExpediente((actual) =>
+          actual?.origen === 'cuestionario' && actual.completadoEn === (nuevas.meta?.completadoEn ?? null)
+            ? { ...actual, id: resultado.id }
+            : actual,
+        )
+      }
+
+      // Solo con el diagnóstico ya guardado: si no, el proyecto mostraría
+      // una puntuación que no está respaldada por ninguna evaluación.
+      if (uid) actualizarPuntuacionProyecto(uid, nuevas.score_total)
+      return resultado
+    })
+  }, [])
+
+  /** Reintenta subir el diagnóstico que se está mostrando. */
+  const reintentarSubida = useCallback(() => {
+    if (respuestasRef.current) subirDiagnostico(respuestasRef.current)
+  }, [subirDiagnostico])
+
+  /**
    * Hidratación desde Supabase: al iniciar sesión, o al cargar con una
    * sesión ya abierta (incluido un F5), se busca el último diagnóstico del
    * usuario y se carga completo en el estado global.
@@ -216,32 +289,61 @@ function Enrutador() {
 
     let vigente = true
 
-    buscarDiagnosticoPrevio(userId).then((resultado) => {
+    // Diagnóstico y proyecto se consultan a la vez: el usuario es un
+    // cliente existente si tiene cualquiera de los dos.
+    Promise.all([buscarDiagnosticoPrevio(userId), tieneProyecto(userId)]).then(([resultado, proyecto]) => {
       if (!vigente) return
 
-      if (resultado.estado === 'encontrado') {
-        const local = { respuestas: respuestasRef.current, expedienteId: cargarExpedienteId() }
-
-        if (debeSustituirLocal(local, resultado)) {
-          if (resultado.expediente.id) guardarExpedienteId(resultado.expediente.id)
-          setExpediente(resultado.expediente)
-
-          // Si Supabase trae lo mismo que ya se está pintando, no se
-          // sustituye el objeto: evita recalcular todas las pestañas tras
-          // cada recarga sin que cambie nada visible.
-          if (JSON.stringify(local.respuestas) !== JSON.stringify(resultado.respuestas)) {
-            guardarDiagnosticoLocal(resultado.respuestas)
-            setRespuestas(resultado.respuestas)
-          }
-        }
+      // Diagnóstico que se completó con esta cuenta pero no llegó a
+      // subirse (por ejemplo, porque falló la escritura y luego se cerró
+      // sesión). Se trata como la copia local más reciente.
+      const pendiente = cargarDiagnosticoPendiente(userId)
+      const local = {
+        respuestas: respuestasRef.current ?? pendiente?.respuestas ?? null,
+        expedienteId: cargarExpedienteId(),
       }
 
-      setBusqueda({ userId, estado: resultado.estado })
+      if (resultado.estado === 'encontrado' && debeSustituirLocal(local, resultado)) {
+        if (resultado.expediente.id) guardarExpedienteId(resultado.expediente.id)
+        setExpediente(resultado.expediente)
+
+        // Si Supabase trae lo mismo que ya se está pintando, no se
+        // sustituye el objeto: evita recalcular todas las pestañas tras
+        // cada recarga sin que cambie nada visible.
+        if (JSON.stringify(local.respuestas) !== JSON.stringify(resultado.respuestas)) {
+          guardarDiagnosticoLocal(resultado.respuestas)
+          setRespuestas(resultado.respuestas)
+        }
+        // Lo que había pendiente es anterior a lo que ya está en Supabase.
+        borrarDiagnosticoPendiente(userId)
+      } else if (pendiente && !respuestasRef.current) {
+        // Supabase no tiene nada más reciente (o no se pudo consultar): se
+        // recupera el diagnóstico pendiente y se vuelve a intentar subirlo.
+        guardarDiagnosticoLocal(pendiente.respuestas)
+        setRespuestas(pendiente.respuestas)
+        setExpediente({ id: null, completadoEn: pendiente.respuestas.meta?.completadoEn ?? null, origen: 'cuestionario' })
+        subirDiagnostico(pendiente.respuestas)
+        setBusqueda({ userId, estado: 'encontrado' })
+        return
+      }
+
+      // Sin diagnóstico pero con proyecto: es un cliente existente y va al
+      // panel, no al cuestionario de bienvenida. Si el proyecto tampoco se
+      // pudo consultar, no se puede afirmar que sea nuevo.
+      let estado = resultado.estado
+      if (estado === 'sin-diagnostico') {
+        if (proyecto === 'si') estado = 'solo-proyecto'
+        else if (proyecto === 'error') estado = 'error'
+      }
+
+      setBusqueda({ userId, estado })
     })
 
     return () => {
       vigente = false
     }
+    // `subirDiagnostico` es estable (useCallback sin dependencias).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, nuevoDiagnostico, mostrandoRecuperacion, busqueda])
 
   /**
@@ -258,6 +360,9 @@ function Enrutador() {
     setBusqueda(BUSQUEDA_PENDIENTE)
     setNuevoDiagnostico(false)
     setReevaluacion(null)
+    setSincronizacion({ estado: 'ok' })
+    // Los diagnósticos pendientes de subir NO se borran: van asociados a
+    // su cuenta y se recuperan cuando esa misma cuenta vuelve a entrar.
     borrarDiagnosticoLocal()
     borrarExpedienteId()
     borrarCitaLocal()
@@ -296,20 +401,7 @@ function Enrutador() {
     setReevaluacion(null)
     guardarDiagnosticoLocal(nuevas)
 
-    guardarDiagnostico(nuevas).then((resultado) => {
-      // El id llega cuando Supabase confirma la escritura: se incorpora
-      // solo si el panel sigue mostrando esta misma evaluación.
-      if (!resultado?.id) return
-      setExpediente((actual) =>
-        actual?.origen === 'cuestionario' && actual.completadoEn === (nuevas.meta?.completadoEn ?? null)
-          ? { ...actual, id: resultado.id }
-          : actual,
-      )
-
-      // Solo con el diagnóstico ya guardado: si no, el proyecto mostraría
-      // una puntuación que no está respaldada por ninguna evaluación.
-      if (userId) actualizarPuntuacionProyecto(userId, nuevas.score_total)
-    })
+    subirDiagnostico(nuevas)
   }
 
   /**
@@ -416,15 +508,18 @@ function Enrutador() {
           onComplete={handleOnboardingComplete}
           respuestasPrevias={reevaluacion?.respuestas ?? null}
           expedienteAnteriorId={reevaluacion?.expedienteId ?? null}
-          // Solo se puede volver si hay un panel al que volver.
-          onCancelar={respuestas ? cancelarReevaluacion : null}
+          // Solo se puede volver si hay un panel al que volver: con diagnóstico,
+          // o como cliente con proyecto que aún no lo ha completado.
+          onCancelar={respuestas || busqueda.estado === 'solo-proyecto' ? cancelarReevaluacion : null}
         />
       </OnboardingProvider>
     )
   }
 
-  if (respuestas === null) {
-    const busquedaResuelta = busqueda.userId === userId
+  const busquedaResuelta = busqueda.userId === userId
+  const soloProyecto = respuestas === null && busquedaResuelta && busqueda.estado === 'solo-proyecto'
+
+  if (respuestas === null && !soloProyecto) {
 
     // No se pudo saber si tiene diagnóstico: ni panel ni cuestionario.
     if (userId && busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
@@ -441,9 +536,9 @@ function Enrutador() {
       )
     }
 
-    // El cuestionario solo aparece cuando está claro que toca: no hay
-    // historial, el usuario pidió uno nuevo, o no hay autenticación. Antes
-    // de saberlo se muestra la carga; si no, el cuestionario asomaría un
+    // El cuestionario solo aparece cuando está claro que toca: sin
+    // diagnóstico ni proyecto en Supabase, o sin autenticación. Antes de
+    // saberlo se muestra la carga; si no, el cuestionario asomaría un
     // instante a un usuario recurrente mientras se consulta su historial.
     const tocaCuestionario = !userId || (busquedaResuelta && busqueda.estado === 'sin-diagnostico')
 
@@ -473,14 +568,27 @@ function Enrutador() {
         <AppLayout nombreUsuario={nombreCompleto}>
           {(activeTab) => {
             const Vista = VISTAS_POR_PESTANA[activeTab]
-            return <Vista />
+            const sinDiagnostico = respuestas === null
+            return (
+              <>
+                <AvisoSincronizacion sincronizacion={sincronizacion} onReintentar={reintentarSubida} />
+                {sinDiagnostico && activeTab === 'inicio' && (
+                  <DiagnosticoPendiente compacto onEmpezar={handleReiniciarOnboarding} />
+                )}
+                {sinDiagnostico && PESTANAS_DE_DIAGNOSTICO.includes(activeTab) ? (
+                  <DiagnosticoPendiente onEmpezar={handleReiniciarOnboarding} />
+                ) : (
+                  <Vista />
+                )}
+              </>
+            )
           }}
         </AppLayout>
       </div>
 
       {/* Informe Ejecutivo: invisible en pantalla, es lo único que compone
-          el navegador al generar el PDF. */}
-      <InformeEjecutivo respuestas={respuestas} />
+          el navegador al generar el PDF. Sin diagnóstico no hay informe. */}
+      {respuestas && <InformeEjecutivo respuestas={respuestas} />}
     </OnboardingProvider>
   )
 }

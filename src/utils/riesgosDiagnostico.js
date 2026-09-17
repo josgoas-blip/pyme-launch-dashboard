@@ -36,10 +36,13 @@ function cantidadDe(respuestas, clave) {
  *   severidad: 'critico' | 'aviso',
  *   pestana: string,
  *   etiquetaPestana: string,
- * }[]} Lista vacía si no hay diagnóstico o no hay riesgos.
+ * }[] | null} `null` sin diagnóstico; lista vacía si no hay riesgos.
  */
 export function derivarRiesgosActivos(respuestas) {
-  if (!respuestas) return []
+  // Sin diagnóstico se devuelve null y no una lista vacía: "no hay riesgos"
+  // y "no se sabe" son cosas distintas, y la tarjeta no debe tranquilizar
+  // a quien aún no ha respondido nada.
+  if (!respuestas) return null
 
   const riesgos = []
 

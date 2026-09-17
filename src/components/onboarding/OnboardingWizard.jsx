@@ -849,6 +849,23 @@ export default function OnboardingWizard({
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+        {/* Sin respuestas previas no hay aviso de reevaluación, pero si se
+            llega desde el panel (cliente con proyecto que aún no tiene
+            diagnóstico) tiene que poder volver sin completarlo. */}
+        {!reevaluando && onCancelar && (
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={onCancelar}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold underline-offset-2 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              style={{ color: VERDE_CORPORATIVO }}
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Volver al panel sin guardar
+            </button>
+          </div>
+        )}
+
         {/* Aviso sutil de reevaluación: presente en todas las pantallas para
             que quede claro que se parte de las respuestas anteriores. */}
         {reevaluando && (
