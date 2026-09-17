@@ -5,6 +5,8 @@ import DimensionesDiagnostico from './DimensionesDiagnostico.jsx'
 import CalidadEvidenciaBars from './CalidadEvidenciaBars.jsx'
 import RecorridoProyecto from './RecorridoProyecto.jsx'
 import HojaRutaHitos from './HojaRutaHitos.jsx'
+import MetricasOperativasCard from './MetricasOperativasCard.jsx'
+import { useProjectDashboard } from '../../hooks/useProjectDashboard.js'
 import SemaforoSupervivencia from '../SemaforoSupervivencia.jsx'
 import {
   derivarResumenGlobal,
@@ -26,6 +28,11 @@ import { derivarPlanAccion } from '../../utils/planAccionDiagnostico.js'
  *
  * Todo sale del diagnóstico real (`respuestas`), sin mocks, y esta vista
  * solo compone: las cifras llegan ya derivadas de los módulos puros.
+ *
+ * Aparte del diagnóstico, el seguimiento del proyecto activo en Supabase
+ * (`useProjectDashboard`): sus métricas operativas y, si los tiene, sus
+ * hitos, que sustituyen a los derivados del cuestionario en la hoja de
+ * ruta. Se consulta una sola vez aquí y se reparte a las dos tarjetas.
  */
 export default function InicioView() {
   const { respuestas } = useOnboarding()
@@ -35,6 +42,7 @@ export default function InicioView() {
   const recorridoProyecto = derivarRecorrido(respuestas)
   const riesgos = derivarRiesgosActivos(respuestas)
   const plan = derivarPlanAccion(respuestas)
+  const proyecto = useProjectDashboard()
 
   return (
     <div className="space-y-6">
@@ -52,8 +60,12 @@ export default function InicioView() {
         </div>
       </div>
 
-      {/* Hoja de ruta de supervivencia inmediata, a todo lo ancho. */}
-      <HojaRutaHitos plan={plan} />
+      {/* Métricas de seguimiento del proyecto: lo que pasa en el negocio
+          después del diagnóstico. */}
+      <MetricasOperativasCard datos={proyecto} />
+
+      {/* Hoja de ruta: hitos del proyecto o, sin ellos, los del diagnóstico. */}
+      <HojaRutaHitos plan={plan} proyecto={proyecto} />
 
       {/* Tesorería y recorrido. El semáforo es visible en todos los planes:
           una alerta de liquidez no debe quedar tras un paywall. */}

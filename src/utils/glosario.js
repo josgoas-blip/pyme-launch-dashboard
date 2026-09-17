@@ -40,6 +40,17 @@ export const GLOSARIO = {
   'ltv-cac':
     'Cuántas veces cubre el valor de un cliente lo que te costó conseguirlo. Por debajo de 3 veces, crecer suele destruir caja.',
   upsell: 'Venta adicional a un cliente que ya te compró, para elevar el importe medio de cada venta.',
+
+  // ── Inicio · métricas operativas ────────────────────────────────────
+  // "Conversión de presupuestos" no entra: se entiende por su nombre.
+  'runway-personal':
+    'Cuántos meses podrías pagar tus gastos personales con tus ahorros si el negocio dejara de darte ingresos.',
+  'dias-cobro':
+    'Tiempo medio que pasa desde que emites una factura hasta que el cliente te la paga.',
+  'utilizacion-capacidad':
+    'Parte de tus horas disponibles que ya está ocupada con trabajo facturable.',
+  'concentracion-cliente':
+    'Porcentaje de tu facturación que procede de tu cliente más grande. Cuanto más alto, más dependes de él.',
 }
 
 /**
