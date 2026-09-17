@@ -5,11 +5,10 @@ import { RotateCcw, AlertTriangle } from 'lucide-react'
 /**
  * Acción "Nuevo diagnóstico" de la barra superior.
  *
- * Abre un modal de confirmación antes de tocar nada: para un usuario con
- * expediente, reiniciar le saca de su panel y le lleva al cuestionario, y
- * un clic accidental le costaría repetir las 20 preguntas. Solo si
- * confirma se limpia el estado y se abre el cuestionario desde cero. Las
- * evaluaciones ya guardadas en Supabase no se borran.
+ * Abre un modal de confirmación antes de salir del panel. Si confirma, se
+ * abre el cuestionario como reevaluación, con las respuestas del último
+ * diagnóstico ya marcadas; el panel no cambia hasta que guarda la nueva
+ * evaluación. Las evaluaciones ya guardadas en Supabase no se borran.
  *
  * El modal se monta con un portal en `document.body`: la barra superior
  * usa `backdrop-blur`, y un `backdrop-filter` convierte al elemento en
@@ -52,7 +51,7 @@ export default function BotonNuevoDiagnostico({ onConfirmar }) {
         ref={botonDisparador}
         type="button"
         onClick={() => setAbierto(true)}
-        title="Vuelve a empezar el cuestionario desde cero"
+        title="Crea una nueva evaluación partiendo de tus respuestas actuales"
         aria-haspopup="dialog"
         className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#1F2937] transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
       >
@@ -85,7 +84,8 @@ export default function BotonNuevoDiagnostico({ onConfirmar }) {
                     ¿Deseas reiniciar tu diagnóstico?
                   </h2>
                   <p id="nuevo-diagnostico-descripcion" className="mt-1 text-sm leading-relaxed text-[#4B5563]">
-                    Se creará una nueva evaluación. Volverás al cuestionario desde cero; tus
+                    Se creará una nueva evaluación. Volverás al cuestionario con tus respuestas
+                    actuales ya marcadas, para cambiar solo lo que haya evolucionado; tus
                     evaluaciones anteriores seguirán guardadas.
                   </p>
                 </div>

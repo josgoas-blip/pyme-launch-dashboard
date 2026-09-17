@@ -1,20 +1,15 @@
 import { useState } from 'react'
-import { ArrowLeft, ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, History, ShieldCheck } from 'lucide-react'
+import { prepararCuestionario, respuestasCambiadas } from '../../utils/reevaluacionDiagnostico.js'
 import { Card } from '../ui/Card.jsx'
 import {
   CAMPOS_CANTIDAD,
   DIMENSIONES,
   OPCIONES_AUTORIZACION,
-  VALORES_POR_DEFECTO,
   calcularDiagnostico,
   normalizarVariables,
 } from '../../utils/scoreDiagnostico.js'
-import {
-  INDICE_OPCION_POR_DEFECTO,
-  PREGUNTAS_TFM,
-  VALORES_INICIALES_TFM,
-  preguntasDelBloque,
-} from '../../data/preguntasDiagnostico.js'
+import { PREGUNTAS_TFM, preguntasDelBloque } from '../../data/preguntasDiagnostico.js'
 
 /**
  * Campos heterogéneos del bloque 4 (permiso legal, euros, meses y un
@@ -285,7 +280,7 @@ function BarraProgreso({ pasoActual, totalPasos, titulo }) {
  * puntuación: en p1 las cinco opciones valen 4, así que comparar por valor
  * marcaría las cinco a la vez.
  */
-function TarjetasOpciones({ idPregunta, opciones, indiceElegido, onElegir }) {
+function TarjetasOpciones({ idPregunta, opciones, indiceElegido, indiceAnterior = null, onElegir }) {
   return (
     <fieldset className="mt-3">
       <legend className="sr-only">Selecciona la opción que mejor te describe</legend>
@@ -314,7 +309,21 @@ function TarjetasOpciones({ idPregunta, opciones, indiceElegido, onElegir }) {
                     : 'border-card-border bg-surface hover:border-primary/40',
                 ].join(' ')}
               >
-                <span className="text-sm font-bold leading-snug text-main">{opcion.etiqueta}</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold leading-snug text-main">{opcion.etiqueta}</span>
+                  {/* En una reevaluación se señala la opción elegida la vez
+                      anterior, esté o no marcada ahora: así se ve de dónde
+                      se parte al cambiarla. */}
+                  {indiceAnterior === indice && (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                      style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}
+                    >
+                      <History className="h-3 w-3" aria-hidden="true" />
+                      Tu respuesta anterior
+                    </span>
+                  )}
+                </span>
                 <span className="text-xs leading-snug text-muted">{opcion.desc}</span>
               </span>
             </label>
@@ -391,11 +400,44 @@ function CampoNumerico({ idPregunta, valor, sufijo, onCambiar, error }) {
   )
 }
 
-/** Una pregunta con el control que le corresponda según su tipo. */
-function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, error }) {
+const formatoEuros = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
+
+/**
+ * Respuesta anterior en texto, para los campos que no son tarjetas
+ * (autorización, cantidades y sí/no). En las tarjetas la anterior se señala
+ * sobre la propia opción.
+ */
+function textoRespuestaAnterior(pregunta, valorAnterior) {
+  if (valorAnterior === undefined || valorAnterior === null) return null
+  if (pregunta.tipo === 'opciones') {
+    return pregunta.opciones.find((o) => o.valor === valorAnterior)?.etiqueta ?? null
+  }
+  if (pregunta.tipo === 'booleano') return valorAnterior ? 'Sí' : 'No'
+  if (pregunta.tipo === 'euros') return formatoEuros.format(Number(valorAnterior))
+  if (pregunta.tipo === 'meses') return `${Number(valorAnterior)} ${Number(valorAnterior) === 1 ? 'mes' : 'meses'}`
+  return null
+}
+
+/**
+ * Una pregunta con el control que le corresponda según su tipo.
+ *
+ * `reevaluacion` (solo al reevaluar) aporta la respuesta anterior y si ha
+ * cambiado: la pregunta se marca como "Modificada" en cuanto el usuario la
+ * cambia, para que al repasar los bloques vea qué ha actualizado.
+ */
+function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, error, reevaluacion = null }) {
+  const anteriorEnTexto = reevaluacion ? textoRespuestaAnterior(pregunta, reevaluacion.valorAnterior) : null
+
   return (
     <div className="border-b border-card-border pb-5 last:border-0 last:pb-0">
-      <p className="text-sm font-semibold leading-snug text-main">{pregunta.titulo}</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="text-sm font-semibold leading-snug text-main">{pregunta.titulo}</p>
+        {reevaluacion?.cambiada && (
+          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+            Modificada
+          </span>
+        )}
+      </div>
       {pregunta.ayuda && <p className="mt-0.5 text-xs text-muted">{pregunta.ayuda}</p>}
 
       {/* Preguntas cualitativas del TFM: sin `tipo` y con opciones descritas. */}
@@ -404,6 +446,7 @@ function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, e
           idPregunta={pregunta.id}
           opciones={pregunta.opciones}
           indiceElegido={indiceElegido}
+          indiceAnterior={reevaluacion?.indiceAnterior ?? null}
           onElegir={onElegirOpcion}
         />
       )}
@@ -439,7 +482,71 @@ function Pregunta({ pregunta, valor, indiceElegido, onCambiar, onElegirOpcion, e
         />
       )}
 
+      {anteriorEnTexto && (
+        <p className="mt-2 inline-flex items-center gap-1 text-xs" style={{ color: '#92400E' }}>
+          <History className="h-3 w-3 shrink-0" aria-hidden="true" />
+          Tu respuesta anterior: <span className="font-semibold">{anteriorEnTexto}</span>
+        </p>
+      )}
     </div>
+  )
+}
+
+/**
+ * Accesos directos a los bloques durante una reevaluación.
+ *
+ * En un diagnóstico nuevo el recorrido es lineal; al reevaluar, todas las
+ * respuestas ya existen y lo natural es ir directo a lo que ha cambiado
+ * (validación, modelo, operaciones o tesorería). Cada acceso indica cuántas
+ * respuestas se han modificado en ese bloque.
+ */
+function NavegacionBloques({ pasoActual, cambiosPorBloque, puedeVerResultado, onIr }) {
+  return (
+    <nav aria-label="Bloques del cuestionario" className="mb-6">
+      <ol className="flex flex-wrap gap-2">
+        {BLOQUES.map((bloque, indice) => {
+          const paso = indice + 1
+          const actual = paso === pasoActual
+          const cambios = cambiosPorBloque[bloque.id] ?? 0
+          return (
+            <li key={bloque.id}>
+              <button
+                type="button"
+                onClick={() => onIr(paso)}
+                aria-current={actual ? 'step' : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                  actual ? 'border-primary bg-primary text-white' : 'border-card-border bg-surface text-main hover:border-primary/40'
+                }`}
+              >
+                {paso}. {bloque.titulo}
+                {cambios > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 text-[10px] font-bold ${actual ? 'bg-white/20 text-white' : 'bg-primary/10 text-primary'}`}
+                  >
+                    {cambios}
+                    <span className="sr-only"> {cambios === 1 ? 'respuesta modificada' : 'respuestas modificadas'}</span>
+                  </span>
+                )}
+              </button>
+            </li>
+          )
+        })}
+        <li>
+          <button
+            type="button"
+            onClick={() => onIr(PASO_FINAL)}
+            disabled={!puedeVerResultado}
+            aria-current={pasoActual === PASO_FINAL ? 'step' : undefined}
+            title={puedeVerResultado ? undefined : 'Corrige los campos marcados antes de ver el resultado'}
+            className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50 ${
+              pasoActual === PASO_FINAL ? 'border-primary bg-primary text-white' : 'border-card-border bg-surface text-main hover:border-primary/40'
+            }`}
+          >
+            Ver resultado
+          </button>
+        </li>
+      </ol>
+    </nav>
   )
 }
 
@@ -528,6 +635,46 @@ function ResumenScore({ score, fase, dimensiones }) {
 }
 
 /**
+ * Comparación con la evaluación anterior en la pantalla final.
+ *
+ * Dice cuánto ha variado el score y si cambia la fase, y cuántas respuestas
+ * se han modificado. Si no se ha cambiado ninguna lo advierte: guardar
+ * registrará igualmente una evaluación con la fecha de hoy.
+ */
+function ComparacionReevaluacion({ scoreAnterior, faseAnterior, scoreNuevo, faseNueva, cambios }) {
+  const diferencia = scoreAnterior !== null ? Math.round(scoreNuevo) - Math.round(scoreAnterior) : null
+  const colorDiferencia = diferencia > 0 ? '#047857' : diferencia < 0 ? '#B91C1C' : TEXTO_SUAVE
+
+  return (
+    <div className="rounded-xl border p-4" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+      <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#92400E' }}>
+        Frente a tu evaluación anterior
+      </p>
+      {diferencia !== null && (
+        <p className="mt-1 text-sm" style={{ color: TEXTO_FUERTE }}>
+          Score <span className="font-bold">{Math.round(scoreAnterior)}</span> →{' '}
+          <span className="font-bold">{Math.round(scoreNuevo)}</span>{' '}
+          <span className="font-bold" style={{ color: colorDiferencia }}>
+            ({diferencia > 0 ? `+${diferencia}` : diferencia === 0 ? 'sin cambios' : diferencia})
+          </span>
+          {faseAnterior && faseAnterior !== faseNueva && (
+            <>
+              {' '}· fase <span className="font-bold">{faseAnterior}</span> →{' '}
+              <span className="font-bold">{faseNueva}</span>
+            </>
+          )}
+        </p>
+      )}
+      <p className="mt-1 text-xs" style={{ color: TEXTO_SUAVE }}>
+        {cambios > 0
+          ? `Has modificado ${cambios} ${cambios === 1 ? 'respuesta' : 'respuestas'}.`
+          : 'No has modificado ninguna respuesta: se guardará igualmente una evaluación con la fecha de hoy.'}
+      </p>
+    </div>
+  )
+}
+
+/**
  * Wizard de Onboarding: consentimiento legal, las 20 variables del modelo
  * de evaluación del TFM repartidas en 4 pasos y una pantalla final que
  * muestra el score obtenido antes de entrar al Dashboard.
@@ -548,25 +695,50 @@ function ResumenScore({ score, fase, dimensiones }) {
  *     score_total: 62, fase_embudo: 'Tracción',
  *     dimensiones: { validacion_mercado: 70, … },
  *     penalizaciones: [ … ],
- *     meta: { consentimientoDatos, terminosAceptados, completadoEn },
+ *     meta: { consentimientoDatos, terminosAceptados, completadoEn, reevaluacion? },
  *   }
  *
- * @param {{ onComplete: (respuestas: Record<string, unknown>) => void }} props
+ * Reevaluación: con `respuestasPrevias` el cuestionario se abre con las
+ * respuestas del último diagnóstico ya marcadas. Cada pregunta señala la
+ * respuesta anterior y se marca como "Modificada" al cambiarla; se puede
+ * saltar directamente a cualquier bloque, y la pantalla final compara el
+ * score nuevo con el anterior. Las casillas legales NO se precargan: el
+ * consentimiento tiene que darse de forma expresa en cada envío.
+ *
+ * @param {{
+ *   onComplete: (respuestas: Record<string, unknown>) => void,
+ *   respuestasPrevias?: Record<string, unknown>|null,
+ *   expedienteAnteriorId?: string|null,
+ *   onCancelar?: (() => void)|null,
+ * }} props
  */
-export default function OnboardingWizard({ onComplete }) {
+export default function OnboardingWizard({
+  onComplete,
+  respuestasPrevias = null,
+  expedienteAnteriorId = null,
+  onCancelar = null,
+}) {
+  /** Estado inicial: en blanco o con las respuestas del último diagnóstico. */
+  const [inicial] = useState(() => prepararCuestionario(respuestasPrevias))
+  const anteriores = inicial.anteriores
+  const reevaluando = anteriores !== null
+
   const [paso, setPaso] = useState(PASO_CONSENTIMIENTO)
   const [consentimientoDatos, setConsentimientoDatos] = useState(false)
   const [terminosAceptados, setTerminosAceptados] = useState(false)
   /** Puntuaciones internas (lo que consumen el score y Supabase). */
-  const [valores, setValores] = useState({ ...VALORES_POR_DEFECTO, ...VALORES_INICIALES_TFM })
+  const [valores, setValores] = useState(inicial.valores)
 
   /**
    * Opción elegida en cada pregunta cualitativa, por índice. Se guarda
    * aparte porque la puntuación no identifica la opción (en p1 todas
    * valen 4) y porque su etiqueta es contexto útil para el agente.
    */
-  const [seleccion, setSeleccion] = useState(
-    Object.fromEntries(PREGUNTAS_TFM.map((p) => [p.id, INDICE_OPCION_POR_DEFECTO])),
+  const [seleccion, setSeleccion] = useState(inicial.seleccion)
+
+  const cambiadas = respuestasCambiadas(anteriores, valores, seleccion)
+  const cambiosPorBloque = Object.fromEntries(
+    BLOQUES.map((bloque) => [bloque.id, bloque.preguntas.filter((p) => cambiadas.includes(p.id)).length]),
   )
 
   const bloqueActual = paso > PASO_CONSENTIMIENTO && paso < PASO_FINAL ? BLOQUES[paso - 1] : null
@@ -606,6 +778,14 @@ export default function OnboardingWizard({ onComplete }) {
   const bloqueTieneErrores = Boolean(
     bloqueActual?.preguntas.some((pregunta) => errores[pregunta.id]),
   )
+  const hayErrores = Object.keys(errores).length > 0
+
+  /** Salto directo a un bloque (solo en reevaluación). */
+  const irAPaso = (destino) => {
+    if (destino === PASO_FINAL && hayErrores) return
+    setPaso(destino)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   /** Normaliza los tipos y añade score, fase y dimensiones al payload. */
   const construirRespuestas = () => {
@@ -625,6 +805,18 @@ export default function OnboardingWizard({ onComplete }) {
         consentimientoDatos,
         terminosAceptados,
         completadoEn: new Date().toISOString(),
+        // Trazabilidad: de qué evaluación parte esta y qué cambió. Cada
+        // diagnóstico sigue siendo una fila nueva; esto permite reconstruir
+        // la evolución sin comparar filas a ciegas.
+        ...(reevaluando && {
+          reevaluacion: {
+            diagnosticoAnteriorId: expedienteAnteriorId,
+            scoreAnterior: anteriores.score,
+            faseAnterior: anteriores.fase,
+            completadoAnteriorEn: anteriores.completadoEn,
+            respuestasCambiadas: cambiadas,
+          },
+        }),
       },
     }
   }
@@ -651,12 +843,50 @@ export default function OnboardingWizard({ onComplete }) {
             />
           </h1>
           <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
-            Evaluación diagnóstica
+            {reevaluando ? 'Reevaluación de proyecto' : 'Evaluación diagnóstica'}
           </span>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
+        {/* Aviso sutil de reevaluación: presente en todas las pantallas para
+            que quede claro que se parte de las respuestas anteriores. */}
+        {reevaluando && (
+          <div
+            role="note"
+            className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-xl border px-4 py-3"
+            style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+          >
+            <div className="flex min-w-0 items-start gap-2.5">
+              <History className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#92400E' }} aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-sm font-bold" style={{ color: TEXTO_FUERTE }}>
+                  Reevaluación de proyecto
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed" style={{ color: TEXTO_SUAVE }}>
+                  Modifica solo los aspectos que hayan evolucionado. Partes de tus respuestas anteriores
+                  {anteriores.score !== null
+                    ? ` (score ${Math.round(anteriores.score)}${anteriores.fase ? `, fase ${anteriores.fase}` : ''})`
+                    : ''}
+                  .
+                  {cambiadas.length > 0 &&
+                    ` Llevas ${cambiadas.length} ${cambiadas.length === 1 ? 'respuesta modificada' : 'respuestas modificadas'}.`}
+                </p>
+              </div>
+            </div>
+            {onCancelar && (
+              <button
+                type="button"
+                onClick={onCancelar}
+                className="shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold underline-offset-2 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                style={{ color: VERDE_CORPORATIVO }}
+              >
+                Volver al panel sin guardar
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── Pantalla 0: consentimiento legal y anonimato ───────────────── */}
         {paso === PASO_CONSENTIMIENTO && (
           <Card className="flex flex-col gap-6">
@@ -668,12 +898,12 @@ export default function OnboardingWizard({ onComplete }) {
                 <ShieldCheck className="h-6 w-6" />
               </span>
               <h2 className="text-xl font-bold" style={{ color: TEXTO_FUERTE }}>
-                Antes de empezar
+                {reevaluando ? 'Actualiza tu diagnóstico' : 'Antes de empezar'}
               </h2>
               <p className="max-w-md text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
-                Evaluación diagnóstica para calibrar la madurez y viabilidad de tu emprendimiento.
-                Son 20 preguntas repartidas en 4 bloques; todas parten de un valor orientativo que
-                puedes ajustar.
+                {reevaluando
+                  ? 'Tus respuestas anteriores ya están marcadas. Revisa los bloques donde tu proyecto haya avanzado y cambia solo lo necesario; se guardará como una evaluación nueva y la anterior se conserva.'
+                  : 'Evaluación diagnóstica para calibrar la madurez y viabilidad de tu emprendimiento. Son 20 preguntas repartidas en 4 bloques; todas parten de un valor orientativo que puedes ajustar.'}
               </p>
             </div>
 
@@ -706,7 +936,7 @@ export default function OnboardingWizard({ onComplete }) {
 
             <div className="flex justify-end">
               <BotonPrimario disabled={!consentimientoDatos} onClick={irAdelante}>
-                Comenzar evaluación
+                {reevaluando ? 'Revisar respuestas' : 'Comenzar evaluación'}
                 <ArrowRight className="h-4 w-4" />
               </BotonPrimario>
             </div>
@@ -716,6 +946,15 @@ export default function OnboardingWizard({ onComplete }) {
         {/* ── Pasos 1..4: un bloque de variables por pantalla ────────────── */}
         {bloqueActual && (
           <Card className="flex flex-col">
+            {reevaluando && (
+              <NavegacionBloques
+                pasoActual={paso}
+                cambiosPorBloque={cambiosPorBloque}
+                puedeVerResultado={!hayErrores}
+                onIr={irAPaso}
+              />
+            )}
+
             <BarraProgreso
               pasoActual={paso}
               totalPasos={BLOQUES.length}
@@ -735,6 +974,15 @@ export default function OnboardingWizard({ onComplete }) {
                   error={errores[pregunta.id]}
                   onCambiar={(valor) => cambiarValor(pregunta.id, valor)}
                   onElegirOpcion={(indice, opcion) => elegirOpcion(pregunta.id, indice, opcion)}
+                  reevaluacion={
+                    reevaluando
+                      ? {
+                          cambiada: cambiadas.includes(pregunta.id),
+                          indiceAnterior: anteriores.seleccion[pregunta.id] ?? null,
+                          valorAnterior: anteriores.valores[pregunta.id],
+                        }
+                      : null
+                  }
                 />
               ))}
             </div>
@@ -753,6 +1001,15 @@ export default function OnboardingWizard({ onComplete }) {
         {/* ── Pantalla final: validación, score y acceso al Dashboard ────── */}
         {paso === PASO_FINAL && (
           <Card className="flex flex-col gap-6">
+            {reevaluando && (
+              <NavegacionBloques
+                pasoActual={paso}
+                cambiosPorBloque={cambiosPorBloque}
+                puedeVerResultado={!hayErrores}
+                onIr={irAPaso}
+              />
+            )}
+
             <div className="flex flex-col items-center gap-3 text-center">
               <span
                 className="flex h-12 w-12 items-center justify-center rounded-full"
@@ -764,10 +1021,21 @@ export default function OnboardingWizard({ onComplete }) {
                 Tus datos han sido validados con éxito por el sistema
               </h2>
               <p className="max-w-md text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
-                Hemos calculado tu score de viabilidad con las 20 variables del diagnóstico. Es una
-                foto de tu punto de partida, no una calificación definitiva.
+                {reevaluando
+                  ? 'Hemos recalculado tu score con las respuestas actualizadas. Al guardar se registrará como una evaluación nueva y la anterior quedará en tu histórico.'
+                  : 'Hemos calculado tu score de viabilidad con las 20 variables del diagnóstico. Es una foto de tu punto de partida, no una calificación definitiva.'}
               </p>
             </div>
+
+            {reevaluando && (
+              <ComparacionReevaluacion
+                scoreAnterior={anteriores.score}
+                faseAnterior={anteriores.fase}
+                scoreNuevo={resultado.score_total}
+                faseNueva={resultado.fase_embudo}
+                cambios={cambiadas.length}
+              />
+            )}
 
             <ResumenScore
               score={resultado.score_total}
@@ -821,7 +1089,7 @@ export default function OnboardingWizard({ onComplete }) {
                 disabled={!terminosAceptados}
                 onClick={() => onComplete(construirRespuestas())}
               >
-                Acceder al Dashboard
+                {reevaluando ? 'Guardar y volver al panel' : 'Acceder al Dashboard'}
                 <ArrowRight className="h-4 w-4" />
               </BotonPrimario>
             </div>

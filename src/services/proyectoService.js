@@ -3,7 +3,8 @@
  * `projects`, `metric_snapshots` y `project_milestones`.
  *
  * Esquema usado (comprobado contra la instancia):
- *   projects            id, user_id, name, sector, is_active, created_at, updated_at
+ *   projects            id, user_id, name, sector, is_active, overall_score,
+ *                       created_at, updated_at
  *   metric_snapshots    id, project_id, created_at, personal_runway_months,
  *                       avg_collection_days, quote_conversion_rate,
  *                       capacity_utilization_pct, top_client_revenue_pct
@@ -184,4 +185,60 @@ export async function registrarSnapshot(projectId, fila) {
   } finally {
     clearTimeout(temporizador)
   }
+}
+
+/**
+ * Actualiza `projects.overall_score` del proyecto activo del usuario con el
+ * score de su última evaluación.
+ *
+ * El proyecto activo se elige con el mismo criterio que el panel
+ * (`is_active` primero y, si no, el último modificado), para que la
+ * puntuación vaya al proyecto que el usuario está viendo.
+ *
+ * Es una actualización secundaria: el diagnóstico ya está guardado en
+ * `diagnosticos`, así que un fallo aquí no se muestra al usuario. Se deja
+ * constancia en consola para poder detectarlo.
+ *
+ * @param {string} userId
+ * @param {number} score - `score_total` del diagnóstico, 0-100.
+ * @returns {Promise<{ ok: true, projectId: string } | { ok: false, motivo: 'sin-proyecto'|'sin-permiso'|'error' }>}
+ */
+export async function actualizarPuntuacionProyecto(userId, score) {
+  if (!haySupabase || !userId || !Number.isFinite(Number(score))) return { ok: false, motivo: 'error' }
+
+  try {
+    const { data: proyectos, error: errorLectura } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('user_id', userId)
+      .order('is_active', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (errorLectura) return avisar({ ok: false, motivo: 'error' })
+
+    const projectId = proyectos?.[0]?.id
+    if (!projectId) return { ok: false, motivo: 'sin-proyecto' }
+
+    const { data, error } = await supabase
+      .from('projects')
+      .update({ overall_score: Math.round(Number(score)) })
+      .eq('id', projectId)
+      .select('id')
+
+    if (error) return avisar({ ok: false, motivo: 'error' })
+    // Sin fila devuelta, RLS no ha dejado modificar el proyecto.
+    if (!data?.length) return avisar({ ok: false, motivo: 'sin-permiso' })
+
+    return { ok: true, projectId }
+  } catch {
+    return avisar({ ok: false, motivo: 'error' })
+  }
+}
+
+/** Deja constancia en consola de un fallo al actualizar el proyecto. */
+function avisar(resultado) {
+  console.warn(`[Supabase] No se ha actualizado overall_score del proyecto (${resultado.motivo}).`)
+  return resultado
 }

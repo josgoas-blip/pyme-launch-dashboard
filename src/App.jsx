@@ -16,6 +16,7 @@ import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { guardarDiagnostico, buscarDiagnosticoPrevio } from './services/diagnosticoService.js'
 import { cerrarSesion } from './services/authService.js'
+import { actualizarPuntuacionProyecto } from './services/proyectoService.js'
 import {
   cargarDiagnosticoLocal,
   guardarDiagnosticoLocal,
@@ -180,6 +181,17 @@ function Enrutador() {
   const [nuevoDiagnostico, setNuevoDiagnostico] = useState(false)
 
   /**
+   * Base de la reevaluación: el diagnóstico con el que se precarga el
+   * cuestionario.
+   *
+   *   - `null`: no hay reevaluación en curso.
+   *   - `{ estado: 'preparando' }`: consultando el último diagnóstico.
+   *   - `{ estado: 'lista', respuestas, expedienteId }`: `respuestas` es
+   *     `null` si no hay nada previo y el cuestionario va en blanco.
+   */
+  const [reevaluacion, setReevaluacion] = useState(null)
+
+  /**
    * Hidratación desde Supabase: al iniciar sesión, o al cargar con una
    * sesión ya abierta (incluido un F5), se busca el último diagnóstico del
    * usuario y se carga completo en el estado global.
@@ -245,6 +257,7 @@ function Enrutador() {
     setExpediente(null)
     setBusqueda(BUSQUEDA_PENDIENTE)
     setNuevoDiagnostico(false)
+    setReevaluacion(null)
     borrarDiagnosticoLocal()
     borrarExpedienteId()
     borrarCitaLocal()
@@ -261,12 +274,28 @@ function Enrutador() {
    * sostiene la recarga— y la persistencia en Supabase va en segundo
    * plano, asociando el `user_id` real: el acceso al panel no espera a la
    * red, y si la escritura falla el servicio lo encola en memoria.
+   *
+   * Cada diagnóstico es una fila nueva en `diagnosticos`, también al
+   * reevaluar: el anterior queda en el histórico. Cuando Supabase confirma
+   * la escritura se actualiza además `projects.overall_score` del proyecto
+   * activo, para que el estado de madurez del proyecto refleje la última
+   * evaluación.
    */
   const handleOnboardingComplete = (nuevas) => {
+    // El expediente guardado apuntaba al diagnóstico anterior. Se olvida
+    // antes de guardar el nuevo: si la escritura fallara y siguiera ahí, la
+    // hidratación tomaría la fila anterior por "el mismo expediente" y
+    // devolvería al usuario sus respuestas viejas tras recargar.
+    borrarExpedienteId()
+    // El panel se reabre por Inicio con la evaluación nueva.
+    borrarPestanaActiva()
+
     setRespuestas(nuevas)
     setExpediente({ id: null, completadoEn: nuevas.meta?.completadoEn ?? null, origen: 'cuestionario' })
     setNuevoDiagnostico(false)
+    setReevaluacion(null)
     guardarDiagnosticoLocal(nuevas)
+
     guardarDiagnostico(nuevas).then((resultado) => {
       // El id llega cuando Supabase confirma la escritura: se incorpora
       // solo si el panel sigue mostrando esta misma evaluación.
@@ -276,27 +305,55 @@ function Enrutador() {
           ? { ...actual, id: resultado.id }
           : actual,
       )
+
+      // Solo con el diagnóstico ya guardado: si no, el proyecto mostraría
+      // una puntuación que no está respaldada por ninguna evaluación.
+      if (userId) actualizarPuntuacionProyecto(userId, nuevas.score_total)
     })
   }
 
   /**
-   * Nuevo diagnóstico: devuelve al cuestionario y borra la sesión guardada,
-   * para que "empezar de cero" siga significando eso tras una recarga. El
-   * histórico ya persistido en Supabase no se toca.
+   * Nuevo diagnóstico como reevaluación: abre el cuestionario con las
+   * respuestas del último diagnóstico ya marcadas.
+   *
+   * La base es el diagnóstico más reciente entre el de Supabase y el que se
+   * está mostrando (que puede ser más nuevo si su escritura aún no ha
+   * llegado): decide `debeSustituirLocal`, el mismo criterio que la
+   * hidratación. Sin nada previo, el cuestionario va en blanco.
+   *
+   * No se borra nada al empezar: el diagnóstico actual, el avance de la
+   * hoja de ruta y la cita siguen intactos hasta que se guarda la nueva
+   * evaluación. Si el usuario vuelve al panel o recarga a mitad, encuentra
+   * todo como estaba. Hitos y cita tampoco se borran al guardar: pertenecen
+   * al mismo proyecto, que sigue siendo el suyo.
    */
   const handleReiniciarOnboarding = () => {
+    const local = { respuestas: respuestasRef.current, expedienteId: cargarExpedienteId() }
+
     setNuevoDiagnostico(true)
-    borrarDiagnosticoLocal()
-    // El avance de la hoja de ruta pertenece al diagnóstico que se borra:
-    // conservarlo dejaría hitos marcados de un plan que ya no existe.
-    borrarHitosCompletados()
-    // La cita pertenece al expediente que se borra.
-    borrarCitaLocal()
-    borrarExpedienteId()
-    // La nueva evaluación empieza, como toda entrada al panel, por Inicio.
-    borrarPestanaActiva()
-    setRespuestas(null)
-    setExpediente(null)
+    setReevaluacion({ estado: 'preparando' })
+
+    const consulta = userId ? buscarDiagnosticoPrevio(userId) : Promise.resolve({ estado: 'sin-diagnostico' })
+    // Si Supabase tarda, se parte de lo que ya hay en pantalla en lugar de
+    // dejar al usuario esperando para empezar.
+    const tiempoMaximo = new Promise((resolver) => setTimeout(() => resolver({ estado: 'error' }), 6000))
+
+    Promise.race([consulta, tiempoMaximo]).then((resultado) => {
+      const base =
+        resultado.estado === 'encontrado' && debeSustituirLocal(local, resultado)
+          ? { respuestas: resultado.respuestas, expedienteId: resultado.expediente.id }
+          : { respuestas: local.respuestas, expedienteId: local.expedienteId }
+
+      // Solo si la reevaluación sigue en marcha: el usuario puede haber
+      // vuelto al panel mientras tanto.
+      setReevaluacion((actual) => (actual?.estado === 'preparando' ? { estado: 'lista', ...base } : actual))
+    })
+  }
+
+  /** Abandona la reevaluación sin guardar: el panel sigue como estaba. */
+  const cancelarReevaluacion = () => {
+    setNuevoDiagnostico(false)
+    setReevaluacion(null)
   }
 
   /** Sale de la pantalla de recuperación y limpia la URL. */
@@ -347,16 +404,38 @@ function Enrutador() {
     return <AuthView key={modoAcceso} modoInicial={modoAcceso} />
   }
 
+  // Nuevo diagnóstico en curso (reevaluación o, sin datos previos, en blanco).
+  if (nuevoDiagnostico) {
+    if (reevaluacion?.estado === 'preparando') {
+      return <PantallaCargando mensaje="Preparando tu reevaluación…" />
+    }
+
+    return (
+      <OnboardingProvider respuestas={null} onReiniciar={handleReiniciarOnboarding}>
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          respuestasPrevias={reevaluacion?.respuestas ?? null}
+          expedienteAnteriorId={reevaluacion?.expedienteId ?? null}
+          // Solo se puede volver si hay un panel al que volver.
+          onCancelar={respuestas ? cancelarReevaluacion : null}
+        />
+      </OnboardingProvider>
+    )
+  }
+
   if (respuestas === null) {
     const busquedaResuelta = busqueda.userId === userId
 
     // No se pudo saber si tiene diagnóstico: ni panel ni cuestionario.
-    if (userId && !nuevoDiagnostico && busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
+    if (userId && busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
       return (
         <HistorialNoDisponible
           motivo={busqueda.estado}
           onReintentar={() => setBusqueda(BUSQUEDA_PENDIENTE)}
-          onNuevoDiagnostico={() => setNuevoDiagnostico(true)}
+          onNuevoDiagnostico={() => {
+            setReevaluacion({ estado: 'lista', respuestas: null, expedienteId: null })
+            setNuevoDiagnostico(true)
+          }}
           onCerrarSesion={cerrarSesion}
         />
       )
@@ -366,7 +445,7 @@ function Enrutador() {
     // historial, el usuario pidió uno nuevo, o no hay autenticación. Antes
     // de saberlo se muestra la carga; si no, el cuestionario asomaría un
     // instante a un usuario recurrente mientras se consulta su historial.
-    const tocaCuestionario = !userId || nuevoDiagnostico || (busquedaResuelta && busqueda.estado === 'sin-diagnostico')
+    const tocaCuestionario = !userId || (busquedaResuelta && busqueda.estado === 'sin-diagnostico')
 
     if (!tocaCuestionario) {
       return <PantallaCargando mensaje="Cargando tu panel…" />
