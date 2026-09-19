@@ -25,6 +25,9 @@
  * @property {string|null} filaId - Fila de `diagnosticos` que guarda la cita.
  * @property {string|null} motivo - Motivo de la cancelación, si la hubo.
  * @property {Date|null} canceladaEn - Momento de la cancelación, si la hubo.
+ * @property {'pendiente'|'confirmada'|null} estadoAnterior - Si se canceló una
+ *   solicitud aún en revisión o una sesión ya confirmada.
+ * @property {Date|null} fechaAnterior - Fecha de la sesión o solicitud cancelada.
  */
 
 /** Estados canónicos, en orden de avance. */
@@ -132,6 +135,8 @@ export function normalizarCita(cruda) {
     filaId: cruda.filaId ?? cruda.fila_id ?? null,
     motivo: typeof cruda.motivo === 'string' && cruda.motivo.trim() ? cruda.motivo.trim() : null,
     canceladaEn: parsearFechaCita(cruda.cancelada_en ?? cruda.canceladaEn),
+    estadoAnterior: estadoCanonico(cruda.estado_anterior ?? cruda.estadoAnterior),
+    fechaAnterior: parsearFechaCita(cruda.fecha_anterior ?? cruda.fechaAnterior),
   }
 }
 

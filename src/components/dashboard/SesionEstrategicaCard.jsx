@@ -270,6 +270,18 @@ export default function SesionEstrategicaCard() {
     ) {
       return
     }
+    // Solicitud anulada antes de que n8n la registrara: cuando la fila
+    // aparece, sigue "en revisión" para la misma fecha. Es la que se anuló.
+    if (
+      actual?.estado === ESTADO_CITA.CANCELADA &&
+      !actual.filaId &&
+      remota.estado === ESTADO_CITA.PENDIENTE &&
+      actual.fechaAnterior &&
+      remota.fecha &&
+      actual.fechaAnterior.getTime() === remota.fecha.getTime()
+    ) {
+      return
+    }
 
     setCita(remota)
 
@@ -389,7 +401,8 @@ export default function SesionEstrategicaCard() {
   }
 
   /**
-   * Cancela la sesión confirmada con el motivo indicado.
+   * Cancela la sesión confirmada, o anula la solicitud en revisión, con el
+   * motivo indicado.
    *
    * Si la cancelación se registra (en Supabase o a través de n8n), la copia
    * local pasa a "cancelada" y la tarjeta vuelve al formulario para elegir
@@ -411,11 +424,14 @@ export default function SesionEstrategicaCard() {
 
     if (!resultado.ok) return resultado
 
+    const eraPendiente = cita?.estado === ESTADO_CITA.PENDIENTE
     const cancelada = {
       estado: 'cancelada',
       fila_id: resultado.filaId,
       motivo: motivo.trim(),
       cancelada_en: resultado.canceladaEn,
+      estado_anterior: cita?.estado ?? null,
+      fecha_anterior: cita?.fecha ? cita.fecha.toISOString() : null,
     }
     guardarCitaLocal(cancelada)
     setCita(normalizarCita(cancelada))
@@ -426,12 +442,16 @@ export default function SesionEstrategicaCard() {
     const avisos = []
     if (!resultado.enSupabase) {
       avisos.push(
-        'El equipo de mentoría liberará la reserva en tu expediente en breve; hasta entonces puede seguir figurando como confirmada en otros dispositivos.',
+        eraPendiente
+          ? 'El equipo de mentoría retirará la solicitud de tu expediente en breve; hasta entonces puede seguir figurando en revisión en otros dispositivos.'
+          : 'El equipo de mentoría liberará la reserva en tu expediente en breve; hasta entonces puede seguir figurando como confirmada en otros dispositivos.',
       )
     }
     if (resultado.avisoMentor === null) {
       avisos.push(
-        'No hay un aviso automático configurado: escribe a tu mentor para confirmarle la cancelación y que libere el evento del calendario.',
+        eraPendiente
+          ? 'No hay un aviso automático configurado: escribe a tu mentor para que descarte la solicitud anterior.'
+          : 'No hay un aviso automático configurado: escribe a tu mentor para confirmarle la cancelación y que libere el evento del calendario.',
       )
     } else if (resultado.avisoMentor === false) {
       avisos.push(
@@ -443,6 +463,38 @@ export default function SesionEstrategicaCard() {
     setEnfocarAviso(true)
     return { ok: true }
   }
+
+  /**
+   * Botón "Cancelar o reprogramar sesión" y su modal. Solo para el
+   * emprendedor, nunca para el mentor en su visor de solo lectura.
+   * Reprogramar es cancelar y pedir otro día.
+   *
+   * @param {string|null} cuando
+   */
+  const accionCancelar = (cuando) =>
+    soloLectura ? null : (
+      <>
+        <button
+          type="button"
+          onClick={() => setCancelando(true)}
+          aria-haspopup="dialog"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+          style={{ borderColor: BORDE, color: TEXTO }}
+        >
+          <CalendarX className="h-4 w-4" aria-hidden="true" />
+          Cancelar o reprogramar sesión
+        </button>
+
+        {cancelando && (
+          <CancelarSesionModal
+            cuando={cuando}
+            pendiente={cita?.estado === ESTADO_CITA.PENDIENTE}
+            onConfirmar={confirmarCancelacion}
+            onCerrar={() => setCancelando(false)}
+          />
+        )}
+      </>
+    )
 
   // ── Estado confirmado ───────────────────────────────────────────────
   if (cita?.estado === ESTADO_CITA.CONFIRMADA) {
@@ -522,28 +574,7 @@ export default function SesionEstrategicaCard() {
           Duración: {DURACION_MIN} minutos
         </p>
 
-        {/* Cancelar o reprogramar: solo el emprendedor, nunca el mentor desde
-            su visor de solo lectura. Reprogramar es cancelar y pedir otro día. */}
-        {!soloLectura && (
-          <button
-            type="button"
-            onClick={() => setCancelando(true)}
-            aria-haspopup="dialog"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-            style={{ borderColor: BORDE, color: TEXTO }}
-          >
-            <CalendarX className="h-4 w-4" aria-hidden="true" />
-            Cancelar o reprogramar sesión
-          </button>
-        )}
-
-        {cancelando && (
-          <CancelarSesionModal
-            cuando={cuando}
-            onConfirmar={confirmarCancelacion}
-            onCerrar={() => setCancelando(false)}
-          />
-        )}
+        {accionCancelar(cuando)}
       </Bloque>
     )
   }
@@ -563,6 +594,10 @@ export default function SesionEstrategicaCard() {
             mentoría. Recibirás confirmación por correo en menos de 24 h.
           </p>
         </div>
+
+        {/* Por si se eligió mal la fecha: se retira la solicitud y se vuelve
+            al formulario sin esperar a que el mentor la revise. */}
+        {accionCancelar(cuando)}
       </Bloque>
     )
   }
@@ -611,9 +646,11 @@ export default function SesionEstrategicaCard() {
         >
           <p className="flex items-start gap-2 font-semibold">
             <CalendarX className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: VERDE }} aria-hidden="true" />
-            Has cancelado tu sesión anterior
+            {cita.estadoAnterior === ESTADO_CITA.PENDIENTE
+              ? 'Has anulado tu solicitud anterior'
+              : 'Has cancelado tu sesión anterior'}
             {formatearFechaCita(cita.canceladaEn) ? ` el ${formatearFechaCita(cita.canceladaEn)}` : ''}. Elige un
-            nuevo día y hora para reprogramarla.
+            nuevo día y hora para {cita.estadoAnterior === ESTADO_CITA.PENDIENTE ? 'volver a solicitarla' : 'reprogramarla'}.
           </p>
           {avisosCancelacion.map((aviso) => (
             <p key={aviso} className="mt-1.5 flex items-start gap-2" style={{ color: TEXTO_SUAVE }}>

@@ -18,13 +18,17 @@ const ENFOCABLES = 'button:not([disabled]), textarea:not([disabled]), [href], [t
  * devuelto al botón que lo abrió. Mientras se cancela no se puede cerrar:
  * cerrar a mitad dejaría la duda de si la cancelación llegó a hacerse.
  *
+ * Con `pendiente` se anula una solicitud que el mentor aún no ha aceptado:
+ * no hay reserva ni enlace de Meet que liberar, y los textos lo reflejan.
+ *
  * @param {{
  *   cuando: string|null,
+ *   pendiente?: boolean,
  *   onConfirmar: (motivo: string) => Promise<{ ok: boolean, motivo?: string }>,
  *   onCerrar: () => void,
  * }} props
  */
-export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
+export default function CancelarSesionModal({ cuando, pendiente = false, onConfirmar, onCerrar }) {
   const [motivo, setMotivo] = useState('')
   const [error, setError] = useState(null)
   const [enviando, setEnviando] = useState(false)
@@ -111,11 +115,12 @@ export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
             </span>
             <div className="min-w-0">
               <h2 id="cancelar-sesion-titulo" className="text-base font-bold text-[#1F2937]">
-                Cancelar o reprogramar la sesión
+                {pendiente ? 'Anular o cambiar la solicitud' : 'Cancelar o reprogramar la sesión'}
               </h2>
               <p id="cancelar-sesion-descripcion" className="mt-0.5 text-xs leading-snug text-[#4B5563]">
-                {cuando ? `Sesión del ${cuando}. ` : ''}Se liberará la reserva y podrás elegir un nuevo día
-                y hora al momento. El enlace de Google Meet dejará de valer.
+                {pendiente
+                  ? `${cuando ? `Solicitud para el ${cuando}. ` : ''}Se retirará la solicitud en revisión y podrás elegir un nuevo día y hora al momento.`
+                  : `${cuando ? `Sesión del ${cuando}. ` : ''}Se liberará la reserva y podrás elegir un nuevo día y hora al momento. El enlace de Google Meet dejará de valer.`}
               </p>
             </div>
           </div>
@@ -133,7 +138,7 @@ export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
         <form onSubmit={confirmar} noValidate className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <label htmlFor="motivo-cancelacion" className="text-sm font-semibold text-[#1F2937]">
-              Motivo de la cancelación <span className="text-red-600">*</span>
+              {pendiente ? 'Motivo de la anulación' : 'Motivo de la cancelación'} <span className="text-red-600">*</span>
             </label>
             <textarea
               ref={campoMotivo}
@@ -147,7 +152,11 @@ export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
               required
               rows={4}
               maxLength={MOTIVO_MAXIMO}
-              placeholder="Por ejemplo: me ha surgido una reunión con un cliente a esa hora."
+              placeholder={
+                pendiente
+                  ? 'Por ejemplo: me equivoqué al elegir la fecha.'
+                  : 'Por ejemplo: me ha surgido una reunión con un cliente a esa hora.'
+              }
               aria-invalid={error ? 'true' : undefined}
               aria-describedby="motivo-cancelacion-ayuda"
               className={`mt-1 w-full resize-none rounded-lg border bg-white px-3 py-2 text-sm text-[#1F2937] outline-none transition-colors placeholder:text-[#9CA3AF] focus:ring-2 disabled:opacity-60 ${
@@ -180,7 +189,7 @@ export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
                 disabled={enviando}
                 className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-[#1F2937] transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-50"
               >
-                Mantener la sesión
+                {pendiente ? 'Mantener la solicitud' : 'Mantener la sesión'}
               </button>
               <button
                 type="submit"
@@ -189,7 +198,7 @@ export default function CancelarSesionModal({ cuando, onConfirmar, onCerrar }) {
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600/60 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70"
               >
                 {enviando && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {enviando ? 'Cancelando…' : 'Confirmar cancelación'}
+                {enviando ? (pendiente ? 'Anulando…' : 'Cancelando…') : pendiente ? 'Confirmar anulación' : 'Confirmar cancelación'}
               </button>
             </div>
           </div>

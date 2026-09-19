@@ -238,10 +238,10 @@ export function validarMotivoCancelacion(motivo) {
  * su flujo.
  *
  * @param {string} filaId
- * @param {{ motivo: string, canceladaEn: string }} cancelacion
+ * @param {{ motivo: string, canceladaEn: string, estadoAnterior: string|null }} cancelacion
  * @returns {Promise<{ ok: true } | { ok: false, motivo: 'sin-permiso'|'no-encontrada'|'error' }>}
  */
-async function marcarCitaCanceladaEnSupabase(filaId, { motivo, canceladaEn }) {
+async function marcarCitaCanceladaEnSupabase(filaId, { motivo, canceladaEn, estadoAnterior }) {
   const { data: fila, error: errorLectura } = await supabase
     .from('diagnosticos')
     .select('id, respuestas')
@@ -261,6 +261,7 @@ async function marcarCitaCanceladaEnSupabase(filaId, { motivo, canceladaEn }) {
       estado: 'cancelada',
       motivo,
       cancelada_en: canceladaEn,
+      estado_anterior: estadoAnterior,
       fecha_anterior: anterior.fecha ?? anterior.fecha_propuesta ?? null,
       meet_url_anterior: anterior.meet_url ?? null,
     },
@@ -312,7 +313,7 @@ async function avisarCancelacionAN8n(aviso) {
 }
 
 /**
- * Cancela la sesión confirmada.
+ * Cancela la sesión confirmada o anula la solicitud aún en revisión.
  *
  * Dos vías, y basta con que funcione una:
  *   - Supabase: se marca la cita como cancelada en su fila. Puede fallar por
@@ -346,12 +347,21 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
   const motivoLimpio = motivo.trim()
   const canceladaEn = new Date().toISOString()
 
-  // La fila de la cita puede no venir en la copia local: se busca.
-  const fila = filaId ?? (await leerCitaRemota())?.filaId ?? null
+  // La fila de la cita puede no venir en la copia local (una solicitud
+  // recién enviada solo existe en este navegador hasta que n8n la registra):
+  // se busca. Solo vale si está en el mismo estado que la que se cancela;
+  // si no, es una cita anterior (por ejemplo, una ya cancelada) y marcarla
+  // daría por anulada una solicitud que sigue viva.
+  const remota = filaId ? null : await leerCitaRemota()
+  const fila = filaId ?? (remota && remota.estado === cita?.estado ? remota.filaId : null)
 
   const resultadoSupabase =
     haySupabase && fila
-      ? await marcarCitaCanceladaEnSupabase(fila, { motivo: motivoLimpio, canceladaEn }).catch(() => ({
+      ? await marcarCitaCanceladaEnSupabase(fila, {
+          motivo: motivoLimpio,
+          canceladaEn,
+          estadoAnterior: cita?.estado ?? null,
+        }).catch(() => ({
           ok: false,
           motivo: 'error',
         }))
@@ -361,6 +371,9 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
     tipo: 'cancelacion_sesion',
     ...contacto,
     fila_cita_id: fila,
+    // 'pendiente': se retira una solicitud que el mentor aún no ha aceptado;
+    // 'confirmada': se cancela una sesión ya agendada (evento y Meet).
+    estado_anterior: cita?.estado ?? null,
     fecha_sesion_cancelada: cita?.fecha ? cita.fecha.toISOString() : null,
     meet_url: cita?.meetUrl ?? null,
     motivo: motivoLimpio,
@@ -377,7 +390,9 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
     resultadoSupabase.motivo === 'sin-permiso'
       ? 'la base de datos no permite modificar esta reserva desde tu cuenta'
       : resultadoSupabase.motivo === 'no-encontrada'
-        ? 'no se ha encontrado la reserva'
+        ? cita?.estado === 'pendiente'
+          ? 'tu solicitud todavía no figura registrada'
+          : 'no se ha encontrado la reserva'
         : 'no hay conexión con el servidor'
   const sinAviso =
     avisoMentor === false
@@ -388,6 +403,9 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
 
   return {
     ok: false,
-    motivo: `No se ha podido cancelar: ${detalle}${sinAviso}. Escribe a tu mentor para cancelarla.`,
+    motivo:
+      cita?.estado === 'pendiente'
+        ? `No se ha podido anular la solicitud: ${detalle}${sinAviso}. Escribe a tu mentor para anularla.`
+        : `No se ha podido cancelar: ${detalle}${sinAviso}. Escribe a tu mentor para cancelarla.`,
   }
 }
