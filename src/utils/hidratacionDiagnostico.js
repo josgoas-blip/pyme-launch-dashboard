@@ -149,3 +149,30 @@ export function debeSustituirLocal(local, remoto) {
   if (fechaRemota === null) return false
   return fechaRemota > fechaLocal
 }
+
+/**
+ * El diagnóstico más reciente de una lista de candidatos ya hidratados.
+ *
+ * Lo usa el Modo Consultor para mostrar el estado vivo del cliente aunque
+ * el enlace apunte a una evaluación antigua. Un candidato sin fecha solo
+ * gana si ninguno la tiene: no se puede afirmar que sea el más reciente.
+ *
+ * @param {Array<{ respuestas: Record<string, unknown>, expediente: Expediente }|null>} candidatos
+ * @returns {{ respuestas: Record<string, unknown>, expediente: Expediente }|null}
+ */
+export function elegirDiagnosticoVigente(candidatos) {
+  let elegido = null
+  let fechaElegida = null
+
+  for (const candidato of candidatos ?? []) {
+    if (!candidato?.expediente) continue
+    const fecha = milisegundos(candidato.expediente.completadoEn)
+
+    if (!elegido || (fecha !== null && (fechaElegida === null || fecha > fechaElegida))) {
+      elegido = candidato
+      fechaElegida = fecha
+    }
+  }
+
+  return elegido
+}

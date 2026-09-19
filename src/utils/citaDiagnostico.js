@@ -18,10 +18,13 @@
 /**
  * Cita ya normalizada, tal y como la consume la vista.
  * @typedef {Object} CitaNormalizada
- * @property {'sin_solicitar'|'pendiente'|'confirmada'} estado
+ * @property {'sin_solicitar'|'pendiente'|'confirmada'|'cancelada'} estado
  * @property {Date|null} fecha - Momento de la sesión, o `null` si no consta.
  * @property {string|null} meetUrl - Enlace de videollamada, o `null`.
  * @property {string|null} estadoOriginal - Valor tal cual llegó, para depurar.
+ * @property {string|null} filaId - Fila de `diagnosticos` que guarda la cita.
+ * @property {string|null} motivo - Motivo de la cancelación, si la hubo.
+ * @property {Date|null} canceladaEn - Momento de la cancelación, si la hubo.
  */
 
 /** Estados canónicos, en orden de avance. */
@@ -29,6 +32,13 @@ export const ESTADO_CITA = {
   SIN_SOLICITAR: 'sin_solicitar',
   PENDIENTE: 'pendiente',
   CONFIRMADA: 'confirmada',
+  /**
+   * La sesión se canceló. Para la tarjeta equivale a "sin solicitar" (vuelve
+   * el formulario), pero es un estado propio: la marca de cancelación tapa a
+   * las reservas anteriores del mismo cliente, que si no volverían a
+   * mostrarse como confirmadas.
+   */
+  CANCELADA: 'cancelada',
 }
 
 /**
@@ -50,6 +60,7 @@ const SINONIMOS = {
     'solicitado',
     'pending',
   ],
+  [ESTADO_CITA.CANCELADA]: ['cancelada', 'cancelado', 'anulada', 'anulado', 'cancelled', 'canceled'],
 }
 
 /** Quita acentos y normaliza para comparar sin depender de la tilde. */
@@ -66,7 +77,7 @@ function clave(valor) {
  * Traduce un texto de estado al vocabulario canónico.
  *
  * @param {unknown} valor
- * @returns {'pendiente'|'confirmada'|null} `null` si no lo reconoce.
+ * @returns {'pendiente'|'confirmada'|'cancelada'|null} `null` si no lo reconoce.
  */
 export function estadoCanonico(valor) {
   const normalizado = clave(valor)
@@ -117,6 +128,10 @@ export function normalizarCita(cruda) {
     fecha: parsearFechaCita(cruda.fecha ?? cruda.fecha_propuesta),
     meetUrl: cruda.meet_url ?? cruda.meetUrl ?? cruda.url_meet ?? null,
     estadoOriginal: typeof cruda.estado === 'string' ? cruda.estado : null,
+    // La copia local guarda en `fila_id` de qué fila se canceló la cita.
+    filaId: cruda.filaId ?? cruda.fila_id ?? null,
+    motivo: typeof cruda.motivo === 'string' && cruda.motivo.trim() ? cruda.motivo.trim() : null,
+    canceladaEn: parsearFechaCita(cruda.cancelada_en ?? cruda.canceladaEn),
   }
 }
 
@@ -224,8 +239,11 @@ export function extraerCitaDeFila(fila) {
   const respuestas = parsearRespuestas(fila.respuestas)
 
   const desdeObjeto = normalizarCita(respuestas?.cita ?? fila.cita)
-  if (desdeObjeto) return desdeObjeto
+  if (desdeObjeto) return { ...desdeObjeto, filaId: fila.id ?? null }
 
+  // `estado_reserva` no se consulta: vale 'pendiente' por defecto en todas
+  // las filas de la tabla, diagnósticos incluidos, y leerlo convertiría a
+  // cualquier usuario en alguien con una sesión "en revisión".
   for (const columna of ['estado_cita', 'estado', 'fase_embudo']) {
     const estado = estadoCanonico(fila[columna])
     if (estado) {
@@ -234,6 +252,9 @@ export function extraerCitaDeFila(fila) {
         fecha: parsearFechaCita(fila.fecha_cita ?? fila.cita_fecha),
         meetUrl: fila.meet_url ?? null,
         estadoOriginal: String(fila[columna]),
+        filaId: fila.id ?? null,
+        motivo: null,
+        canceladaEn: null,
       }
     }
   }

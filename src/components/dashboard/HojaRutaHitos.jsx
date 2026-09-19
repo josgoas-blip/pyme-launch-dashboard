@@ -3,6 +3,7 @@ import { Check, ArrowRight, Flag, Loader2, AlertTriangle } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
 import { useNavegacion } from '../../context/NavegacionContext.jsx'
 import { cargarHitosCompletados, guardarHitosCompletados } from '../../utils/persistenciaHitos.js'
+import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
 
 /** Color semafórico por prioridad, igual que en el Plan de Acción. */
 const ESTILO_PRIORIDAD = {
@@ -33,6 +34,8 @@ const ESTILO_CATEGORIA = 'bg-primary/10 text-primary'
  */
 function ListaHitos({ titulo, subtitulo, elementos, onAlternar, error = null, pie = null }) {
   const { irAPestana } = useNavegacion()
+  // El mentor ve el avance pero no lo cambia.
+  const { soloLectura } = useModoLectura()
 
   const hechos = elementos.filter((e) => e.hecho).length
   const avance = elementos.length ? Math.round((hechos / elementos.length) * 100) : 0
@@ -82,13 +85,16 @@ function ListaHitos({ titulo, subtitulo, elementos, onAlternar, error = null, pi
             <button
               type="button"
               onClick={() => onAlternar(elemento.id)}
-              disabled={elemento.guardando}
+              disabled={elemento.guardando || soloLectura}
+              aria-disabled={soloLectura || undefined}
               role="checkbox"
               aria-checked={elemento.hecho}
               aria-busy={elemento.guardando || undefined}
-              aria-label={`Marcar como completado: ${elemento.titulo}`}
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:cursor-wait ${
-                elemento.hecho ? 'border-primary bg-primary text-white' : 'border-gray-300 bg-white hover:border-primary'
+              aria-label={soloLectura ? elemento.titulo : `Marcar como completado: ${elemento.titulo}`}
+              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${soloLectura ? 'cursor-default' : 'disabled:cursor-wait'} ${
+                elemento.hecho
+                  ? 'border-primary bg-primary text-white'
+                  : `border-gray-300 bg-white ${soloLectura ? '' : 'hover:border-primary'}`
               }`}
             >
               {elemento.guardando ? (
@@ -165,7 +171,11 @@ const FORMATO_FECHA = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 
  */
 export default function HojaRutaHitos({ plan, proyecto = null }) {
   const { irAPestana } = useNavegacion()
-  const [completados, setCompletados] = useState(cargarHitosCompletados)
+  const { soloLectura } = useModoLectura()
+  // El avance de los hitos del diagnóstico vive en el navegador. En Modo
+  // Consultor ese navegador es el del mentor, así que no se lee: marcaría
+  // como hechos hitos que el cliente no ha tocado.
+  const [completados, setCompletados] = useState(() => (soloLectura ? [] : cargarHitosCompletados()))
 
   if (proyecto?.estado === 'cargando') {
     return (

@@ -93,10 +93,16 @@ function PanelConsultor({ expedienteId, token }) {
     return <EnlaceNoValido motivo={estado.resultado?.motivo} expedienteId={expedienteId} />
   }
 
-  const { id, respuestas, nombreCliente } = estado.resultado.expediente
+  const { id, respuestas, nombreCliente, clienteUserId, completadoEn, enlaceAnterior } = estado.resultado.expediente
 
   return (
-    <ModoLecturaProvider expedienteId={id} nombreCliente={nombreCliente}>
+    <ModoLecturaProvider
+      expedienteId={id}
+      nombreCliente={nombreCliente}
+      clienteUserId={clienteUserId}
+      completadoEn={completadoEn}
+      enlaceAnterior={enlaceAnterior}
+    >
       {/* El mentor entra con acceso total: el selector de plan está oculto
           en solo lectura, y sin esto se quedaría en 'report' y no podría
           abrir Viabilidad ni Estrategia, que es justo lo que necesita para

@@ -18,9 +18,10 @@ import {
  *   - 'ok'           hay proyecto (puede no tener snapshot ni hitos aún).
  *   - 'sin-proyecto' el usuario no tiene proyecto, o no hay sesión.
  *   - 'error'        no se pudo consultar; `recargar` lo reintenta.
- *   - 'no-disponible' Modo Consultor: el enlace identifica un expediente,
- *                    no un usuario, así que no hay proyecto que consultar
- *                    sin arriesgarse a mostrar el de otra cuenta.
+ *   - 'no-disponible' Modo Consultor sin cuenta de cliente conocida: sin
+ *                    ella no hay proyecto que consultar sin arriesgarse a
+ *                    mostrar el de otra cuenta. Con cuenta conocida se lee
+ *                    su proyecto, en solo lectura.
  *
  * `guardarMetricas` registra una medición nueva (INSERT, nunca UPDATE) y
  * la aplica al estado con la fila que devuelve Supabase.
@@ -44,7 +45,11 @@ import {
  */
 export function useProjectDashboard() {
   const { userId, cargando: cargandoSesion } = useAuth()
-  const { soloLectura } = useModoLectura()
+  const { soloLectura, clienteUserId } = useModoLectura()
+
+  // En Modo Consultor el proyecto es el de la cuenta del cliente, nunca el
+  // de la sesión que pudiera haber abierta en el navegador del mentor.
+  const usuarioConsultado = soloLectura ? clienteUserId : userId
 
   const [lectura, setLectura] = useState({ estado: 'cargando', proyecto: null, snapshot: null, hitos: [] })
   const [intento, setIntento] = useState(0)
@@ -56,18 +61,18 @@ export function useProjectDashboard() {
   hitosRef.current = lectura.hitos
 
   useEffect(() => {
-    if (soloLectura) {
+    if (soloLectura && !clienteUserId) {
       setLectura({ estado: 'no-disponible', proyecto: null, snapshot: null, hitos: [] })
       return undefined
     }
 
     // Mientras se recupera la sesión `userId` es null: no es "sin proyecto".
-    if (cargandoSesion) return undefined
+    if (!soloLectura && cargandoSesion) return undefined
 
     let vigente = true
     setLectura((actual) => ({ ...actual, estado: 'cargando' }))
 
-    leerDashboardProyecto(userId).then((resultado) => {
+    leerDashboardProyecto(usuarioConsultado).then((resultado) => {
       if (!vigente) return
 
       if (resultado.estado !== 'ok') {
@@ -86,7 +91,7 @@ export function useProjectDashboard() {
     return () => {
       vigente = false
     }
-  }, [soloLectura, cargandoSesion, userId, intento])
+  }, [soloLectura, clienteUserId, cargandoSesion, usuarioConsultado, intento])
 
   const recargar = useCallback(() => setIntento((n) => n + 1), [])
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CalendarDays,
   Clock,
@@ -9,9 +9,12 @@ import {
   AlertTriangle,
   ShieldCheck,
   UserRound,
+  CalendarX,
+  Info,
 } from 'lucide-react'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
-import { solicitarSesion, leerCitaRemota, hayWebhookCita } from '../../services/citaService.js'
+import { solicitarSesion, leerCitaRemota, hayWebhookCita, cancelarCita } from '../../services/citaService.js'
+import CancelarSesionModal from './CancelarSesionModal.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
 import { suscribirseAlExpediente } from '../../services/realtimeExpediente.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
@@ -203,6 +206,31 @@ export default function SesionEstrategicaCard() {
    */
   const [ficha, setFicha] = useState(null)
 
+  /** Cita vigente legible desde la revalidación asíncrona. */
+  const citaRef = useRef(cita)
+  citaRef.current = cita
+
+  /** Modal de cancelación abierto. */
+  const [cancelando, setCancelando] = useState(false)
+
+  /**
+   * Avisos tras cancelar: qué se ha hecho y qué no (por ejemplo, si no se
+   * pudo avisar automáticamente al mentor). Se muestran sobre el formulario.
+   */
+  const [avisosCancelacion, setAvisosCancelacion] = useState([])
+
+  /**
+   * Aviso que sustituye al botón de cancelar. El botón desaparece con la
+   * cita confirmada, así que el foco se lleva aquí para no perderlo.
+   */
+  const avisoCancelacionRef = useRef(null)
+  const [enfocarAviso, setEnfocarAviso] = useState(false)
+  useEffect(() => {
+    if (!enfocarAviso) return
+    avisoCancelacionRef.current?.focus()
+    setEnfocarAviso(false)
+  }, [enfocarAviso])
+
   /**
    * Relectura del estado real desde Supabase.
    *
@@ -225,6 +253,24 @@ export default function SesionEstrategicaCard() {
     if (fichaRemota) setFicha(fichaRemota)
 
     if (!remota) return
+
+    const actual = citaRef.current
+    // Una solicitud nueva enviada tras cancelar está "en revisión" en este
+    // navegador; la cita cancelada que aún devuelve Supabase es la anterior
+    // y no debe devolver la tarjeta al formulario.
+    if (remota.estado === ESTADO_CITA.CANCELADA && actual?.estado === ESTADO_CITA.PENDIENTE) return
+    // Cancelada aquí pero todavía confirmada en Supabase: pasa cuando la
+    // base de datos no dejó modificar la fila y la cancelación llegó por n8n,
+    // que la actualizará después. Hasta entonces manda la cancelación.
+    if (
+      actual?.estado === ESTADO_CITA.CANCELADA &&
+      actual.filaId &&
+      actual.filaId === remota.filaId &&
+      remota.estado !== ESTADO_CITA.CANCELADA
+    ) {
+      return
+    }
+
     setCita(remota)
 
     if (remota.estado === ESTADO_CITA.CONFIRMADA) {
@@ -342,6 +388,62 @@ export default function SesionEstrategicaCard() {
     setCita(normalizarCita(guardada))
   }
 
+  /**
+   * Cancela la sesión confirmada con el motivo indicado.
+   *
+   * Si la cancelación se registra (en Supabase o a través de n8n), la copia
+   * local pasa a "cancelada" y la tarjeta vuelve al formulario para elegir
+   * otro día. Se avisa de lo que no haya podido hacerse: que el mentor no ha
+   * recibido aviso automático o que la reserva está pendiente de liberarse.
+   */
+  const confirmarCancelacion = async (motivo) => {
+    const resultado = await cancelarCita({
+      filaId: cita?.filaId ?? null,
+      motivo,
+      cita,
+      contacto: {
+        id_usuario: userId ?? obtenerClienteAnonimo(),
+        expediente_id: cargarExpedienteId(),
+        cliente_nombre: userId ? nombreCompleto : null,
+        cliente_email: emailSesion ?? null,
+      },
+    })
+
+    if (!resultado.ok) return resultado
+
+    const cancelada = {
+      estado: 'cancelada',
+      fila_id: resultado.filaId,
+      motivo: motivo.trim(),
+      cancelada_en: resultado.canceladaEn,
+    }
+    guardarCitaLocal(cancelada)
+    setCita(normalizarCita(cancelada))
+    // El consentimiento es por solicitud: la nueva debe marcarlo de nuevo.
+    setConsentimiento(false)
+    setError(null)
+
+    const avisos = []
+    if (!resultado.enSupabase) {
+      avisos.push(
+        'El equipo de mentoría liberará la reserva en tu expediente en breve; hasta entonces puede seguir figurando como confirmada en otros dispositivos.',
+      )
+    }
+    if (resultado.avisoMentor === null) {
+      avisos.push(
+        'No hay un aviso automático configurado: escribe a tu mentor para confirmarle la cancelación y que libere el evento del calendario.',
+      )
+    } else if (resultado.avisoMentor === false) {
+      avisos.push(
+        'No se ha podido avisar automáticamente a tu mentor: escríbele para confirmarle la cancelación.',
+      )
+    }
+    setAvisosCancelacion(avisos)
+    setCancelando(false)
+    setEnfocarAviso(true)
+    return { ok: true }
+  }
+
   // ── Estado confirmado ───────────────────────────────────────────────
   if (cita?.estado === ESTADO_CITA.CONFIRMADA) {
     const cuando = formatearFechaCita(cita.fecha)
@@ -419,6 +521,29 @@ export default function SesionEstrategicaCard() {
         <p className="mt-4 text-xs" style={{ color: TEXTO_SUAVE }}>
           Duración: {DURACION_MIN} minutos
         </p>
+
+        {/* Cancelar o reprogramar: solo el emprendedor, nunca el mentor desde
+            su visor de solo lectura. Reprogramar es cancelar y pedir otro día. */}
+        {!soloLectura && (
+          <button
+            type="button"
+            onClick={() => setCancelando(true)}
+            aria-haspopup="dialog"
+            className="mt-4 inline-flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+            style={{ borderColor: BORDE, color: TEXTO }}
+          >
+            <CalendarX className="h-4 w-4" aria-hidden="true" />
+            Cancelar o reprogramar sesión
+          </button>
+        )}
+
+        {cancelando && (
+          <CancelarSesionModal
+            cuando={cuando}
+            onConfirmar={confirmarCancelacion}
+            onCerrar={() => setCancelando(false)}
+          />
+        )}
       </Bloque>
     )
   }
@@ -448,13 +573,21 @@ export default function SesionEstrategicaCard() {
   // una sesión en nombre del cliente. Se le informa del estado, que es lo
   // que necesita saber al preparar la reunión.
   if (soloLectura) {
+    const cancelada = cita?.estado === ESTADO_CITA.CANCELADA
+    const fechaCancelacion = cancelada ? formatearFechaCita(cita.canceladaEn) : null
     return (
       <Bloque fondo={SUPERFICIE}>
         <Cabecera>Sesión de mentoría</Cabecera>
         <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
-          Este emprendedor todavía no ha solicitado su sesión estratégica. La solicitud parte
-          siempre del cliente desde su propio panel.
+          {cancelada
+            ? `El emprendedor canceló su sesión estratégica${fechaCancelacion ? ` el ${fechaCancelacion}` : ''}. Puede volver a solicitarla desde su panel.`
+            : 'Este emprendedor todavía no ha solicitado su sesión estratégica. La solicitud parte siempre del cliente desde su propio panel.'}
         </p>
+        {cancelada && cita.motivo && (
+          <p className="mt-2 text-sm leading-relaxed" style={{ color: TEXTO }}>
+            <span className="font-semibold">Motivo:</span> {cita.motivo}
+          </p>
+        )}
       </Bloque>
     )
   }
@@ -464,6 +597,32 @@ export default function SesionEstrategicaCard() {
       <Cabecera>
         Reserva {DURACION_MIN} minutos con tu mentor para revisar el diagnóstico
       </Cabecera>
+
+      {/* Tras cancelar, el formulario queda listo para pedir otra fecha; el
+          aviso dice qué se ha hecho y, si falta algo, qué debe hacer el
+          emprendedor. */}
+      {cita?.estado === ESTADO_CITA.CANCELADA && (
+        <div
+          ref={avisoCancelacionRef}
+          tabIndex={-1}
+          role="status"
+          className="mt-4 rounded-lg border px-3 py-2.5 text-xs leading-relaxed focus:outline-none"
+          style={{ backgroundColor: '#FFFFFF', borderColor: BORDE, color: TEXTO }}
+        >
+          <p className="flex items-start gap-2 font-semibold">
+            <CalendarX className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: VERDE }} aria-hidden="true" />
+            Has cancelado tu sesión anterior
+            {formatearFechaCita(cita.canceladaEn) ? ` el ${formatearFechaCita(cita.canceladaEn)}` : ''}. Elige un
+            nuevo día y hora para reprogramarla.
+          </p>
+          {avisosCancelacion.map((aviso) => (
+            <p key={aviso} className="mt-1.5 flex items-start gap-2" style={{ color: TEXTO_SUAVE }}>
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {aviso}
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>

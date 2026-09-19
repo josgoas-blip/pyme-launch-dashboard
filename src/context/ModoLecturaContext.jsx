@@ -10,15 +10,32 @@ const ModoLecturaContext = createContext(null)
  * sin los botones. Un panel duplicado se desincroniza en cuanto alguien
  * toca una tarjeta y se olvida de la otra copia.
  *
+ * `expedienteId` es el diagnóstico que se muestra: el más reciente del
+ * cliente, que puede no ser el del enlace. `clienteUserId` es la cuenta del
+ * cliente, si se conoce, para consultar su proyecto. `enlaceAnterior` indica
+ * que el enlace apuntaba a una evaluación más antigua.
+ *
  * @param {{
  *   expedienteId: string,
  *   nombreCliente: string,
+ *   clienteUserId?: string|null,
+ *   completadoEn?: Date|null,
+ *   enlaceAnterior?: { id: string, completadoEn: Date|null }|null,
  *   children: import('react').ReactNode,
  * }} props
  */
-export function ModoLecturaProvider({ expedienteId, nombreCliente, children }) {
+export function ModoLecturaProvider({
+  expedienteId,
+  nombreCliente,
+  clienteUserId = null,
+  completadoEn = null,
+  enlaceAnterior = null,
+  children,
+}) {
   return (
-    <ModoLecturaContext.Provider value={{ soloLectura: true, expedienteId, nombreCliente }}>
+    <ModoLecturaContext.Provider
+      value={{ soloLectura: true, expedienteId, nombreCliente, clienteUserId, completadoEn, enlaceAnterior }}
+    >
       {children}
     </ModoLecturaContext.Provider>
   )
@@ -32,5 +49,14 @@ export function ModoLecturaProvider({ expedienteId, nombreCliente, children }) {
  * existe antes de preguntar.
  */
 export function useModoLectura() {
-  return useContext(ModoLecturaContext) ?? { soloLectura: false, expedienteId: null, nombreCliente: null }
+  return (
+    useContext(ModoLecturaContext) ?? {
+      soloLectura: false,
+      expedienteId: null,
+      nombreCliente: null,
+      clienteUserId: null,
+      completadoEn: null,
+      enlaceAnterior: null,
+    }
+  )
 }

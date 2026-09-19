@@ -4,6 +4,7 @@ import { Card, CardTitle, Badge } from '../ui/Card.jsx'
 import PistaTermino from '../ui/PistaTermino.jsx'
 import { explicar } from '../../utils/glosario.js'
 import ActualizarMetricasModal from './ActualizarMetricasModal.jsx'
+import { useModoLectura } from '../../context/ModoLecturaContext.jsx'
 
 /** Tiempo que permanece visible la confirmación de guardado. */
 const DURACION_AVISO_MS = 5000
@@ -82,6 +83,9 @@ export default function MetricasOperativasCard({ datos }) {
   const { estado, proyecto, snapshot, metricas, recargar, guardarMetricas } = datos
   const [editando, setEditando] = useState(false)
   const [aviso, setAviso] = useState(null)
+  // En Modo Consultor la tarjeta es solo de lectura: el mentor no registra
+  // mediciones en nombre del cliente.
+  const { soloLectura } = useModoLectura()
 
   useEffect(() => {
     if (!aviso) return undefined
@@ -103,7 +107,7 @@ export default function MetricasOperativasCard({ datos }) {
   )
 
   /** Botón de la cabecera: solo con un proyecto al que asociar la medición. */
-  const botonActualizar = (
+  const botonActualizar = soloLectura ? null : (
     <button
       type="button"
       onClick={() => {
@@ -171,7 +175,9 @@ export default function MetricasOperativasCard({ datos }) {
     return (
       <Card>
         {encabezado(
-          'Todavía no hay un proyecto registrado en tu cuenta. Cuando lo haya, aquí verás su runway personal, cobros, conversión, capacidad y dependencia de clientes.',
+          soloLectura
+            ? 'No hay un proyecto con métricas operativas visible para este cliente.'
+            : 'Todavía no hay un proyecto registrado en tu cuenta. Cuando lo haya, aquí verás su runway personal, cobros, conversión, capacidad y dependencia de clientes.',
         )}
       </Card>
     )

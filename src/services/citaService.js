@@ -18,7 +18,7 @@
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo, usuarioActual } from './diagnosticoService.js'
-import { extraerCitaDeFila, filaDelVisitante, identidadesDeFila } from '../utils/citaDiagnostico.js'
+import { extraerCitaDeFila, filaDelVisitante, identidadesDeFila, parsearRespuestas } from '../utils/citaDiagnostico.js'
 import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
 /**
@@ -186,5 +186,208 @@ export async function leerCitaRemota(expedienteId = cargarExpedienteId(), { aisl
   } catch {
     // Sin red o sin permiso de lectura: la tarjeta se queda con la copia local.
     return null
+  }
+}
+
+// ── Cancelación de la sesión ─────────────────────────────────────────────
+
+/**
+ * Webhook de n8n que recibe las cancelaciones.
+ *
+ * Sin valor por defecto a propósito: reutilizar el de agendado crearía una
+ * reserva nueva en lugar de cancelar. Si no está definido, la cancelación
+ * solo se registra en Supabase y el mentor no recibe aviso automático.
+ */
+export const URL_WEBHOOK_CANCELACION = import.meta.env.VITE_N8N_WEBHOOK_CANCELACION_URL || ''
+
+/** ¿Hay webhook de cancelación? */
+export const hayWebhookCancelacion = Boolean(URL_WEBHOOK_CANCELACION)
+
+/** Longitud mínima y máxima del motivo. */
+export const MOTIVO_MINIMO = 10
+export const MOTIVO_MAXIMO = 500
+
+/**
+ * Comprueba el motivo de la cancelación.
+ *
+ * @param {string} motivo
+ * @returns {string|null} Mensaje de error, o `null` si es válido.
+ */
+export function validarMotivoCancelacion(motivo) {
+  const limpio = typeof motivo === 'string' ? motivo.trim() : ''
+  if (!limpio) return 'Indica el motivo de la cancelación.'
+  if (limpio.length < MOTIVO_MINIMO) {
+    return `Explica el motivo con un poco más de detalle (al menos ${MOTIVO_MINIMO} caracteres).`
+  }
+  if (limpio.length > MOTIVO_MAXIMO) return `El motivo admite como máximo ${MOTIVO_MAXIMO} caracteres.`
+  return null
+}
+
+/**
+ * Marca como cancelada la cita guardada en una fila de `diagnosticos`.
+ *
+ * La cita no se borra del JSON: se sustituye por
+ * `{ estado: 'cancelada', motivo, cancelada_en, fecha_anterior, meet_url_anterior }`.
+ * La tarjeta muestra la cita más reciente que encuentra entre las filas del
+ * cliente; si esta desapareciera sin más, una reserva anterior ya confirmada
+ * volvería a mostrarse como vigente. Además queda constancia del motivo.
+ *
+ * También se ponen `estado_reserva = 'cancelada'`, `fecha_sesion = null` y
+ * `meet_url = null`. Se respeta el formato de `respuestas`: n8n lo guarda
+ * como texto JSON y así se sigue guardando, para no cambiarle el formato a
+ * su flujo.
+ *
+ * @param {string} filaId
+ * @param {{ motivo: string, canceladaEn: string }} cancelacion
+ * @returns {Promise<{ ok: true } | { ok: false, motivo: 'sin-permiso'|'no-encontrada'|'error' }>}
+ */
+async function marcarCitaCanceladaEnSupabase(filaId, { motivo, canceladaEn }) {
+  const { data: fila, error: errorLectura } = await supabase
+    .from('diagnosticos')
+    .select('id, respuestas')
+    .eq('id', filaId)
+    .maybeSingle()
+
+  if (errorLectura) return { ok: false, motivo: 'error' }
+  if (!fila) return { ok: false, motivo: 'no-encontrada' }
+
+  const eraTexto = typeof fila.respuestas === 'string'
+  const json = parsearRespuestas(fila.respuestas) ?? {}
+  const anterior = json.cita && typeof json.cita === 'object' ? json.cita : {}
+
+  const nuevas = {
+    ...json,
+    cita: {
+      estado: 'cancelada',
+      motivo,
+      cancelada_en: canceladaEn,
+      fecha_anterior: anterior.fecha ?? anterior.fecha_propuesta ?? null,
+      meet_url_anterior: anterior.meet_url ?? null,
+    },
+  }
+
+  const { data, error } = await supabase
+    .from('diagnosticos')
+    .update({
+      respuestas: eraTexto ? JSON.stringify(nuevas) : nuevas,
+      estado_reserva: 'cancelada',
+      fecha_sesion: null,
+      meet_url: null,
+    })
+    .eq('id', filaId)
+    .select('id')
+
+  if (error) return { ok: false, motivo: error.code === '42501' ? 'sin-permiso' : 'error' }
+  // Sin fila devuelta, RLS no ha dejado modificarla (lo habitual si la creó
+  // n8n sin `user_id`): no se ha escrito nada.
+  if (!data?.length) return { ok: false, motivo: 'sin-permiso' }
+  return { ok: true }
+}
+
+/**
+ * Avisa a n8n de la cancelación, para que libere el evento del calendario y
+ * el Meet y lo comunique al mentor.
+ *
+ * @param {Record<string, unknown>} aviso
+ * @returns {Promise<boolean|null>} `null` si no hay webhook configurado.
+ */
+async function avisarCancelacionAN8n(aviso) {
+  if (!hayWebhookCancelacion) return null
+
+  const cancelacion = new AbortController()
+  const temporizador = setTimeout(() => cancelacion.abort(), TIEMPO_MAXIMO_MS)
+  try {
+    const respuesta = await fetch(URL_WEBHOOK_CANCELACION, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aviso),
+      signal: cancelacion.signal,
+    })
+    return respuesta.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(temporizador)
+  }
+}
+
+/**
+ * Cancela la sesión confirmada.
+ *
+ * Dos vías, y basta con que funcione una:
+ *   - Supabase: se marca la cita como cancelada en su fila. Puede fallar por
+ *     RLS: la fila la crea n8n sin `user_id` y el emprendedor no es su
+ *     dueño a ojos de la base de datos.
+ *   - n8n (si hay webhook): recibe el motivo, avisa al mentor, cancela el
+ *     evento y puede actualizar la fila con sus propios permisos.
+ *
+ * Si fallan las dos, no se cancela nada y se devuelve el motivo: marcarla
+ * solo en el navegador haría creer al emprendedor que ha cancelado una
+ * sesión que el mentor sigue teniendo en su agenda.
+ *
+ * @param {{
+ *   filaId: string|null,
+ *   motivo: string,
+ *   cita: import('../utils/citaDiagnostico.js').CitaNormalizada,
+ *   contacto: { id_usuario: string|null, expediente_id: string|null, cliente_nombre: string|null, cliente_email: string|null },
+ * }} datos
+ * @returns {Promise<
+ *   | { ok: true, canceladaEn: string, filaId: string|null, enSupabase: boolean, avisoMentor: boolean|null }
+ *   | { ok: false, motivo: string }
+ * >}
+ */
+export async function cancelarCita({ filaId, motivo, cita, contacto }) {
+  const problema = validarMotivoCancelacion(motivo)
+  if (problema) return { ok: false, motivo: problema }
+  if (!haySupabase && !hayWebhookCancelacion) {
+    return { ok: false, motivo: 'La cancelación no está disponible en esta instalación.' }
+  }
+
+  const motivoLimpio = motivo.trim()
+  const canceladaEn = new Date().toISOString()
+
+  // La fila de la cita puede no venir en la copia local: se busca.
+  const fila = filaId ?? (await leerCitaRemota())?.filaId ?? null
+
+  const resultadoSupabase =
+    haySupabase && fila
+      ? await marcarCitaCanceladaEnSupabase(fila, { motivo: motivoLimpio, canceladaEn }).catch(() => ({
+          ok: false,
+          motivo: 'error',
+        }))
+      : { ok: false, motivo: 'no-encontrada' }
+
+  const avisoMentor = await avisarCancelacionAN8n({
+    tipo: 'cancelacion_sesion',
+    ...contacto,
+    fila_cita_id: fila,
+    fecha_sesion_cancelada: cita?.fecha ? cita.fecha.toISOString() : null,
+    meet_url: cita?.meetUrl ?? null,
+    motivo: motivoLimpio,
+    cancelada_en: canceladaEn,
+    // Para que n8n sepa si le toca actualizar la fila con sus permisos.
+    actualizada_en_supabase: resultadoSupabase.ok,
+  })
+
+  if (resultadoSupabase.ok || avisoMentor === true) {
+    return { ok: true, canceladaEn, filaId: fila, enSupabase: resultadoSupabase.ok, avisoMentor }
+  }
+
+  const detalle =
+    resultadoSupabase.motivo === 'sin-permiso'
+      ? 'la base de datos no permite modificar esta reserva desde tu cuenta'
+      : resultadoSupabase.motivo === 'no-encontrada'
+        ? 'no se ha encontrado la reserva'
+        : 'no hay conexión con el servidor'
+  const sinAviso =
+    avisoMentor === false
+      ? ' y no se ha podido avisar al equipo de mentoría'
+      : avisoMentor === null
+        ? ' y no hay un canal configurado para avisar al equipo de mentoría'
+        : ''
+
+  return {
+    ok: false,
+    motivo: `No se ha podido cancelar: ${detalle}${sinAviso}. Escribe a tu mentor para cancelarla.`,
   }
 }
