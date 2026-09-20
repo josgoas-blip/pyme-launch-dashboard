@@ -1,10 +1,10 @@
 /**
- * Servicio de la ficha del expediente: equipo de mentoría y fecha de alta.
+ * Servicio de la ficha del expediente: consultor asignado y fecha de alta.
  *
  * Ambos datos viven en la misma fila de `diagnosticos`, así que se leen en
- * una sola consulta. Los mentores llegan por el join incrustado de
- * PostgREST sobre las claves foráneas `mentor_principal_id` y
- * `comentor_id`; la fecha de alta es el `completado_en` de la fila.
+ * una sola consulta. El consultor llega por el join incrustado de
+ * PostgREST sobre la clave foránea `mentor_principal_id`; la fecha de alta
+ * es el `completado_en` de la fila.
  *
  * Igual que el resto de servicios del proyecto, nunca lanza: devuelve
  * `null` cuando no hay nada que mostrar, y la tarjeta se queda con sus
@@ -16,18 +16,17 @@ import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 import { filaDelVisitante, identidadesDeFila } from '../utils/citaDiagnostico.js'
 
 /**
- * Join incrustado: PostgREST resuelve las dos relaciones por su clave
- * foránea y las devuelve anidadas. Se piden solo los campos que pinta la
- * tarjeta; `email` queda fuera a propósito, porque no se muestra y es un
- * dato de contacto que no hace falta exponer al navegador.
+ * Join incrustado: PostgREST resuelve la relación por su clave foránea y
+ * la devuelve anidada. Se piden solo los campos que pinta la tarjeta;
+ * `email` queda fuera a propósito, porque no se muestra y es un dato de
+ * contacto que no hace falta exponer al navegador.
  */
 const SELECT_FICHA = `
   id,
   user_id,
   completado_en,
   respuestas,
-  mentor_principal:mentor_principal_id (id, nombre, especialidad, avatar_url),
-  comentor:comentor_id (id, nombre, especialidad, avatar_url)
+  mentor_principal:mentor_principal_id (id, nombre, especialidad, avatar_url)
 `
 
 /** Filas que se revisan cuando no hay expediente guardado. */
@@ -45,8 +44,7 @@ const LIMITE_RASTREO = 100
 /**
  * Ficha del expediente.
  * @typedef {Object} FichaExpediente
- * @property {Mentor|null} principal
- * @property {Mentor|null} coMentor
+ * @property {Mentor|null} principal - Consultor asignado al expediente.
  * @property {Date|null} altaEn - Fecha de alta (el `completado_en` de la fila).
  */
 
@@ -96,40 +94,39 @@ export function fechaDeAlta(fila) {
 function fichaDeFila(fila) {
   return {
     principal: normalizarMentor(fila?.mentor_principal),
-    coMentor: normalizarMentor(fila?.comentor),
     altaEn: fechaDeAlta(fila),
   }
 }
 
 /**
- * Ficha con el alta que ya se conozca, pero sin mentores.
+ * Ficha con el alta que ya se conozca, pero sin consultor.
  *
- * Es el resultado cuando el expediente se pudo leer y la búsqueda de
- * mentores no encontró ninguno: se devuelve igualmente para no perder la
+ * Es el resultado cuando el expediente se pudo leer y la búsqueda del
+ * consultor no encontró ninguno: se devuelve igualmente para no perder la
  * fecha de alta, que es un dato válido por sí solo.
  *
  * @param {Date|null} alta
  * @returns {FichaExpediente|null}
  */
 function fichaSoloAlta(alta) {
-  return alta ? { principal: null, coMentor: null, altaEn: alta } : null
+  return alta ? { principal: null, altaEn: alta } : null
 }
 
 /**
  * Ficha del expediente de este visitante.
  *
  * Dos caminos, los mismos que usa la lectura de la cita: primero el
- * expediente guardado al crear el diagnóstico y, si en él no constan los
- * mentores, un rastreo acotado de las demás filas de este cliente.
+ * expediente guardado al crear el diagnóstico y, si en él no consta el
+ * consultor, un rastreo acotado de las demás filas de este cliente.
  *
  * El rastreo no es un respaldo excepcional, es el camino habitual: n8n no
  * actualiza el expediente, crea una fila nueva al agendar la sesión, y es
- * ahí donde escribe la asignación del equipo. Consultar solo el expediente
- * dejaba la ficha en "Por asignar" incluso con los mentores ya asignados.
+ * ahí donde escribe la asignación. Consultar solo el expediente dejaba la
+ * ficha en "Por asignar" incluso con el consultor ya asignado.
  *
  * En el rastreo, el alta es la del expediente —o, sin él, la fila **más
- * antigua** del cliente— y los mentores, los de la primera fila que los
- * tenga asignados. Suelen ser filas distintas.
+ * antigua** del cliente— y el consultor, el de la primera fila que lo
+ * tenga asignado. Suelen ser filas distintas.
  *
  * @param {string|null} [expedienteId]
  * @returns {Promise<FichaExpediente|null>} `null` si no se pudo leer nada.
@@ -142,7 +139,7 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
      * Alta tomada del expediente, si se pudo leer.
      *
      * Se guarda aparte porque la consulta al expediente ya no cierra la
-     * función: sirve para el alta, pero no basta para los mentores.
+     * función: sirve para el alta, pero no basta para el consultor.
      */
     let altaDelExpediente = null
 
@@ -156,13 +153,13 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
     const identidades = new Set()
 
     // 1. El expediente es la fila del propio diagnóstico: su fecha es el
-    //    alta. Los mentores, en cambio, rara vez están ahí: n8n no
+    //    alta. El consultor, en cambio, rara vez está ahí: n8n no
     //    actualiza el expediente, crea una fila nueva al agendar la sesión
-    //    y es en esa fila donde escribe `mentor_principal_id` y
-    //    `comentor_id`. Por eso solo se devuelve aquí si los mentores ya
-    //    constan; si no, se conserva el alta y se sigue buscándolos. Sin
-    //    esto la tarjeta se quedaba en "Por asignar" para siempre, aunque
-    //    el equipo estuviera asignado en la fila de la cita.
+    //    y es en esa fila donde escribe `mentor_principal_id`. Por eso
+    //    solo se devuelve aquí si el consultor ya consta; si no, se
+    //    conserva el alta y se sigue buscándolo. Sin esto la tarjeta se
+    //    quedaba en "Por asignar" para siempre, aunque el consultor
+    //    estuviera asignado en la fila de la cita.
     if (expedienteId) {
       const { data, error } = await supabase
         .from('diagnosticos')
@@ -172,7 +169,7 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
 
       if (!error && data) {
         const ficha = fichaDeFila(data)
-        if (ficha.principal || ficha.coMentor) return ficha
+        if (ficha.principal) return ficha
         altaDelExpediente = ficha.altaEn
         identidadesDeFila(data).forEach((id) => identidades.add(id))
       }
@@ -202,16 +199,16 @@ export async function leerFichaExpediente(expedienteId = cargarExpedienteId()) {
     if (error || !data?.length) return fichaSoloAlta(altaDelExpediente)
 
     // Solo filas del propio visitante: sin esta comprobación la tarjeta
-    // podría anunciar el mentor o el alta de otra persona.
+    // podría anunciar el consultor o el alta de otra persona.
     const propias = data.filter((fila) => filaDelVisitante(fila, ...identidades))
     if (propias.length === 0) return fichaSoloAlta(altaDelExpediente)
 
-    const conMentores = propias.find((fila) => fila.mentor_principal || fila.comentor)
+    const conConsultor = propias.find((fila) => fila.mentor_principal)
     // Vienen ordenadas de más reciente a más antigua: la última es el alta.
     const masAntigua = propias[propias.length - 1]
 
     return {
-      ...fichaDeFila(conMentores ?? masAntigua),
+      ...fichaDeFila(conConsultor ?? masAntigua),
       // El alta del expediente manda: es la fila del diagnóstico real, y
       // el rastreo puede haber traído filas que n8n creó después.
       altaEn: altaDelExpediente ?? fechaDeAlta(masAntigua),

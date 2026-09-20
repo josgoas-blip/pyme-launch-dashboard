@@ -84,7 +84,7 @@ function Valor({ registrado, className = '', children }) {
  *   - Modo Consultor: lee el perfil asociado al expediente del enlace, en
  *     solo lectura y sin tocar la sesión del navegador del mentor.
  *
- * El equipo de mentoría y la fecha de alta siguen saliendo del expediente.
+ * El consultor asignado y la fecha de alta siguen saliendo del expediente.
  */
 export default function PerfilClienteCard() {
   const { respuestas } = useOnboarding()
@@ -106,7 +106,7 @@ export default function PerfilClienteCard() {
   const [error, setError] = useState(null)
   const [avisoGuardado, setAvisoGuardado] = useState(false)
 
-  // Equipo de mentoría y alta. Se revalida en cada montaje, que es al
+  // Consultor asignado y alta. Se revalida en cada montaje, que es al
   // entrar en Configuración: la asignación la hace el equipo mientras el
   // usuario usa el panel.
   useEffect(() => {
@@ -407,21 +407,16 @@ export default function PerfilClienteCard() {
         </p>
       )}
 
-      {/* Equipo de mentoría asignado (solo lectura) */}
+      {/* Consultor asignado (solo lectura). Cada expediente tiene uno
+          solo, así que la tarjeta ocupa todo el ancho: dejar media fila
+          vacía sugeriría que falta una segunda persona por asignar. */}
       <div className="mt-5 border-t border-card-border pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Equipo de Mentoría Asignado</p>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Consultor Asignado</p>
+        <div className="mt-3">
           <TarjetaMentor
-            rotulo="Mentor Principal"
+            rotulo="Consultor"
             mentor={ficha?.principal ?? null}
             cargando={cargandoFicha}
-            tono="primario"
-          />
-          <TarjetaMentor
-            rotulo="Co-Mentor"
-            mentor={ficha?.coMentor ?? null}
-            cargando={cargandoFicha}
-            tono="secundario"
           />
         </div>
         <p className="mt-2 text-[11px] text-muted">Alta: {fechaAlta}</p>

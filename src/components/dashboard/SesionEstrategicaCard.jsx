@@ -35,7 +35,7 @@ const TEXTO = '#2C3E35'
 const TEXTO_SUAVE = '#4B5563'
 
 /** Duración de la sesión, en minutos. */
-const DURACION_MIN = 45
+const DURACION_MIN = 60
 
 /** Días hábiles ofrecidos en el selector (unas cuatro semanas). */
 const DIAS_HABILES_OFRECIDOS = 20
@@ -43,7 +43,7 @@ const DIAS_HABILES_OFRECIDOS = 20
 /**
  * Horas de inicio disponibles.
  *
- * La jornada va de 10:00 a 19:00 y la sesión dura 45 minutos, así que el
+ * La jornada va de 10:00 a 19:00 y la sesión dura 60 minutos, así que el
  * último inicio posible es a las 18:00: empezar a las 19:00 la dejaría
  * terminando fuera de horario.
  */
@@ -84,7 +84,7 @@ function proximosDiasHabiles(cantidad = DIAS_HABILES_OFRECIDOS) {
 }
 
 /**
- * Nombre del mentor asignado, o el aviso de que aún no lo está.
+ * Nombre del consultor asignado, o el aviso de que aún no lo está.
  *
  * Se escribe "Por asignar" en vez de dejar el hueco vacío o inventar un
  * nombre: el cliente tiene que poder distinguir "todavía no lo sabemos" de
@@ -198,7 +198,7 @@ export default function SesionEstrategicaCard() {
   )
 
   /**
-   * Equipo de mentoría asignado al expediente.
+   * Consultor asignado al expediente.
    *
    * Se lee aquí además de en la ficha del perfil porque cuando la sesión
    * está confirmada lo que el cliente necesita saber es con quién se
@@ -541,16 +541,16 @@ export default function SesionEstrategicaCard() {
           )}
         </p>
 
-        {/* Equipo asignado. Se pinta siempre que la sesión esté confirmada,
-            aunque todavía no haya nombres: saber que están "por asignar" es
-            información útil, y ocultar el bloque dejaría al cliente sin
-            saber si el dato existe o si la tarjeta se lo está callando. */}
+        {/* Consultor asignado. Se pinta siempre que la sesión esté
+            confirmada, aunque todavía no haya nombre: saber que está "por
+            asignar" es información útil, y ocultar el bloque dejaría al
+            cliente sin saber si el dato existe o si la tarjeta se lo está
+            callando. */}
         <div
-          className="mt-4 grid grid-cols-1 gap-3 rounded-xl border p-3 sm:grid-cols-2"
+          className="mt-4 rounded-xl border p-3"
           style={{ backgroundColor: `${VERDE}0D`, borderColor: `${VERDE}26` }}
         >
-          <LineaMentor rotulo="Tutor" mentor={ficha?.principal ?? null} />
-          <LineaMentor rotulo="Co-tutor" mentor={ficha?.coMentor ?? null} />
+          <LineaMentor rotulo="Consultor asignado" mentor={ficha?.principal ?? null} />
         </div>
 
         {cita.meetUrl ? (

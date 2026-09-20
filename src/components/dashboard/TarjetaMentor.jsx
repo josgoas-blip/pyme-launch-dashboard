@@ -1,7 +1,7 @@
 import { UserRound } from 'lucide-react'
 
 /**
- * Ficha de un mentor del equipo asignado.
+ * Ficha del consultor asignado al expediente.
  *
  * Cuando la clave foránea del expediente aún está vacía se muestra "Por
  * asignar" en lugar de un nombre por defecto. Enseñar un mentor cableado
@@ -12,18 +12,14 @@ import { UserRound } from 'lucide-react'
  *   rotulo: string,
  *   mentor: import('../../services/expedienteService.js').Mentor | null,
  *   cargando?: boolean,
- *   tono?: 'primario' | 'secundario',
  * }} props
  */
-export default function TarjetaMentor({ rotulo, mentor, cargando = false, tono = 'primario' }) {
-  const estiloIcono =
-    tono === 'primario' ? 'bg-primary/10 text-primary' : 'bg-accent-green/10 text-accent-green'
-
+export default function TarjetaMentor({ rotulo, mentor, cargando = false }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-card-border bg-canvas p-3">
       <span
         className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg ${
-          mentor ? estiloIcono : 'bg-gray-100 text-[#4B5563]'
+          mentor ? 'bg-primary/10 text-primary' : 'bg-gray-100 text-[#4B5563]'
         }`}
       >
         {mentor?.avatarUrl ? (

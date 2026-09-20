@@ -22,7 +22,7 @@ export default function ConfiguracionView() {
         <BloqueHeader
           numero={1}
           titulo="Perfil del Emprendedor & Ficha Identificativa"
-          subtitulo="Datos del emprendedor y equipo de mentoría asignado"
+          subtitulo="Datos del emprendedor y consultor asignado"
         />
         <PerfilClienteCard />
       </section>
@@ -32,7 +32,7 @@ export default function ConfiguracionView() {
         <BloqueHeader
           numero={2}
           titulo="Sesión Estratégica de Mentoría"
-          subtitulo="Agenda 45 minutos con tu mentor para revisar el diagnóstico"
+          subtitulo="Sesión estratégica de 60 minutos con tu mentor para revisar el diagnóstico"
         />
         <SesionEstrategicaCard />
       </section>
