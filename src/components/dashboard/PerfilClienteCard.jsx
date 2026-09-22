@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Building2, Mail, User, IdCard, Users, Pencil, Check, X, Loader2, AlertTriangle } from 'lucide-react'
 import { Card, CardTitle, Badge } from '../ui/Card.jsx'
-import TarjetaMentor from './TarjetaMentor.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
 import {
   componerFichaEmpresa,
@@ -84,15 +83,17 @@ function Valor({ registrado, className = '', children }) {
  *   - Modo Consultor: lee el perfil asociado al expediente del enlace, en
  *     solo lectura y sin tocar la sesión del navegador del mentor.
  *
- * El consultor asignado y la fecha de alta siguen saliendo del expediente.
+ * La fecha de alta sigue saliendo del expediente. El consultor asignado no
+ * se pinta aquí: lo muestra la tarjeta de la Sesión Estratégica, que además
+ * lo actualiza en tiempo real cuando el equipo lo asigna.
  */
 export default function PerfilClienteCard() {
   const { respuestas } = useOnboarding()
   const { soloLectura, expedienteId } = useModoLectura()
   const { usuario, userId } = useAuth()
 
+  /** Ficha del expediente; de ella solo se usa aquí la fecha de alta. */
   const [ficha, setFicha] = useState(null)
-  const [cargandoFicha, setCargandoFicha] = useState(true)
 
   /** Fila de `profiles` tal como está guardada (o `null`). */
   const [perfil, setPerfil] = useState(null)
@@ -106,22 +107,17 @@ export default function PerfilClienteCard() {
   const [error, setError] = useState(null)
   const [avisoGuardado, setAvisoGuardado] = useState(false)
 
-  // Consultor asignado y alta. Se revalida en cada montaje, que es al
-  // entrar en Configuración: la asignación la hace el equipo mientras el
-  // usuario usa el panel.
+  // Fecha de alta del expediente. Se revalida en cada montaje, que es al
+  // entrar en Configuración.
   useEffect(() => {
     let vigente = true
 
     // En Modo Consultor se consulta el expediente del enlace: sin pasarlo,
     // el servicio caería en el expediente guardado en el navegador del
     // mentor y mostraría su ficha en lugar de la del cliente.
-    leerFichaExpediente(soloLectura ? expedienteId : undefined)
-      .then((datos) => {
-        if (vigente) setFicha(datos)
-      })
-      .finally(() => {
-        if (vigente) setCargandoFicha(false)
-      })
+    leerFichaExpediente(soloLectura ? expedienteId : undefined).then((datos) => {
+      if (vigente) setFicha(datos)
+    })
 
     return () => {
       vigente = false
@@ -407,19 +403,11 @@ export default function PerfilClienteCard() {
         </p>
       )}
 
-      {/* Consultor asignado (solo lectura). Cada expediente tiene uno
-          solo, así que la tarjeta ocupa todo el ancho: dejar media fila
-          vacía sugeriría que falta una segunda persona por asignar. */}
+      {/* El consultor asignado ya no se repite aquí: vive en la tarjeta de
+          la Sesión Estratégica, que lo recibe en tiempo real. Queda el alta,
+          que es un dato de la ficha identificativa. */}
       <div className="mt-5 border-t border-card-border pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Consultor Asignado</p>
-        <div className="mt-3">
-          <TarjetaMentor
-            rotulo="Consultor"
-            mentor={ficha?.principal ?? null}
-            cargando={cargandoFicha}
-          />
-        </div>
-        <p className="mt-2 text-[11px] text-muted">Alta: {fechaAlta}</p>
+        <p className="text-[11px] text-muted">Alta: {fechaAlta}</p>
       </div>
     </Card>
   )

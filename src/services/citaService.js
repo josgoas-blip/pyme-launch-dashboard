@@ -32,7 +32,7 @@ import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
  */
 export const URL_WEBHOOK_CITA =
   import.meta.env.VITE_N8N_WEBHOOK_CITA_URL ||
-  'https://pymelaunch.app.n8n.cloud/webhook/webhook-agendar-consultoria'
+  'https://pymelaunch.app.n8n.cloud/webhook/658b4044-87b4-4ae0-97be-92df63a8e226'
 
 /** ¿Hay webhook al que enviar la solicitud? */
 export const hayWebhookCita = Boolean(URL_WEBHOOK_CITA)

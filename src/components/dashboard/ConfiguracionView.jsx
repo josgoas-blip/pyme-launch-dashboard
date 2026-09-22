@@ -22,7 +22,7 @@ export default function ConfiguracionView() {
         <BloqueHeader
           numero={1}
           titulo="Perfil del Emprendedor & Ficha Identificativa"
-          subtitulo="Datos del emprendedor y consultor asignado"
+          subtitulo="Datos identificativos del emprendedor y de su empresa"
         />
         <PerfilClienteCard />
       </section>
