@@ -609,13 +609,15 @@ export default function SesionEstrategicaCard() {
   // que necesita saber al preparar la reunión.
   if (soloLectura) {
     const cancelada = cita?.estado === ESTADO_CITA.CANCELADA
-    const fechaCancelacion = cancelada ? formatearFechaCita(cita.canceladaEn) : null
+    // La fecha que importa es la de la sesión que se cayó, no el momento en
+    // que el emprendedor pulsó cancelar.
+    const sesionPrevista = cancelada ? formatearFechaCita(cita.fechaAnterior) : null
     return (
       <Bloque fondo={SUPERFICIE}>
         <Cabecera>Sesión de mentoría</Cabecera>
         <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO_SUAVE }}>
           {cancelada
-            ? `El emprendedor canceló su sesión estratégica${fechaCancelacion ? ` el ${fechaCancelacion}` : ''}. Puede volver a solicitarla desde su panel.`
+            ? `El emprendedor canceló su sesión estratégica${sesionPrevista ? `, prevista para el ${sesionPrevista}` : ''}. Puede volver a solicitarla desde su panel.`
             : 'Este emprendedor todavía no ha solicitado su sesión estratégica. La solicitud parte siempre del cliente desde su propio panel.'}
         </p>
         {cancelada && cita.motivo && (
@@ -626,6 +628,12 @@ export default function SesionEstrategicaCard() {
       </Bloque>
     )
   }
+
+  // Aviso de la cancelación. Se nombra la fecha para la que estaba
+  // prevista la sesión y no el momento en que se canceló: "cancelada el
+  // miércoles a las 12:09 h" hacía pensar que la reunión era entonces.
+  const solicitudAnulada = cita?.estadoAnterior === ESTADO_CITA.PENDIENTE
+  const sesionPrevista = formatearFechaCita(cita?.fechaAnterior)
 
   return (
     <Bloque fondo={SUPERFICIE}>
@@ -646,11 +654,14 @@ export default function SesionEstrategicaCard() {
         >
           <p className="flex items-start gap-2 font-semibold">
             <CalendarX className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: VERDE }} aria-hidden="true" />
-            {cita.estadoAnterior === ESTADO_CITA.PENDIENTE
-              ? 'Has anulado tu solicitud anterior'
-              : 'Has cancelado tu sesión anterior'}
-            {formatearFechaCita(cita.canceladaEn) ? ` el ${formatearFechaCita(cita.canceladaEn)}` : ''}. Elige un
-            nuevo día y hora para {cita.estadoAnterior === ESTADO_CITA.PENDIENTE ? 'volver a solicitarla' : 'reprogramarla'}.
+            {solicitudAnulada
+              ? sesionPrevista
+                ? `Has anulado tu solicitud prevista para el ${sesionPrevista}.`
+                : 'Has anulado tu solicitud anterior.'
+              : sesionPrevista
+                ? `Has cancelado tu sesión prevista para el ${sesionPrevista}.`
+                : 'Has cancelado tu sesión anterior.'}{' '}
+            Elige un nuevo día y hora para {solicitudAnulada ? 'volver a solicitarla' : 'reprogramarla'}.
           </p>
           {avisosCancelacion.map((aviso) => (
             <p key={aviso} className="mt-1.5 flex items-start gap-2" style={{ color: TEXTO_SUAVE }}>

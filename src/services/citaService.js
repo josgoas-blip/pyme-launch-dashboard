@@ -374,6 +374,10 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
     // 'pendiente': se retira una solicitud que el mentor aún no ha aceptado;
     // 'confirmada': se cancela una sesión ya agendada (evento y Meet).
     estado_anterior: cita?.estado ?? null,
+    // El mismo dato con los dos nombres: `fecha_anterior` es el que usan
+    // los correos de n8n, y `fecha_sesion_cancelada` se mantiene para no
+    // romper los nodos que ya lo leían.
+    fecha_anterior: cita?.fecha ? cita.fecha.toISOString() : null,
     fecha_sesion_cancelada: cita?.fecha ? cita.fecha.toISOString() : null,
     meet_url: cita?.meetUrl ?? null,
     motivo: motivoLimpio,
