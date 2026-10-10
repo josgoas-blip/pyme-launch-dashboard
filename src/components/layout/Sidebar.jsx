@@ -1,5 +1,7 @@
-import { Home, BarChart3, Target, Wallet, Settings, X } from 'lucide-react'
+import { Home, BarChart3, Target, Wallet, Settings, GraduationCap, ExternalLink, X } from 'lucide-react'
 import { TABS } from './TabNav.jsx'
+
+const URL_ACADEMIA = 'https://pyme-launch-academy.vercel.app'
 
 /** Icono de cada pestaña, en el mismo orden del menú. */
 const ICONO_POR_PESTANA = {
@@ -104,6 +106,23 @@ export default function Sidebar({ activeTab, onTabChange, abiertoEnMovil, onCerr
                 </li>
               )
             })}
+
+            {/* Enlace externo: la Academia vive en otro sitio y se abre aparte. */}
+            <li>
+              <button
+                type="button"
+                onClick={() => window.open(URL_ACADEMIA, '_blank', 'noopener,noreferrer')}
+                className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold text-white/75 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <GraduationCap className="h-4 w-4 shrink-0" />
+                Academia
+                <span className="sr-only"> (se abre en una pestaña nueva)</span>
+                <ExternalLink
+                  className="ml-auto h-3.5 w-3.5 shrink-0 text-white/40 transition-colors group-hover:text-white/80"
+                  aria-hidden="true"
+                />
+              </button>
+            </li>
           </ul>
         </nav>
 
