@@ -10,11 +10,13 @@
  * siempre un resultado describiendo qué ha pasado, de modo que un fallo de
  * red no pueda dejar el botón colgado ni romper el estado de la tarjeta.
  *
- * Contrato con n8n:
- *   POST  { id_usuario, expediente_id, cliente_nombre, cliente_email,
- *           fecha_propuesta, fase, score_total,
+ * Contrato con el Agente de Reservas de n8n:
+ *   POST  { cliente_nombre, cliente_email, expediente_id, dia_seleccionado,
+ *           hora_seleccionada, fecha_iso, consentimiento_datos,
+ *           id_usuario, fecha_propuesta, fase, score_total,
  *           consentimiento_compartir_datos }
- *   2xx   solicitud registrada (el cuerpo puede venir vacío)
+ *   2xx   solicitud registrada (el cuerpo puede venir vacío o ser
+ *         `{ success: true }`; `{ success: false }` cuenta como error)
  */
 import { supabase, haySupabase } from '../lib/supabaseClient.js'
 import { obtenerClienteAnonimo, usuarioActual } from './diagnosticoService.js'
@@ -22,20 +24,28 @@ import { extraerCitaDeFila, filaDelVisitante, identidadesDeFila, parsearRespuest
 import { cargarExpedienteId } from '../utils/persistenciaDiagnostico.js'
 
 /**
- * Webhook de agendado.
+ * Webhook del Agente de Reservas.
  *
- * Se lee del entorno para respetar la regla 3 de CLAUDE.md, con la
- * instancia del proyecto como valor por defecto para que la función
- * funcione en un clon recién descargado. Es un endpoint, no una
- * credencial: quien quiera apuntar a otra instancia solo tiene que definir
- * `VITE_N8N_WEBHOOK_CITA_URL`.
+ * Se lee del entorno (regla 3 de CLAUDE.md). `VITE_N8N_WEBHOOK_CITA_URL`
+ * se acepta como nombre antiguo para que un despliegue que ya la tenga
+ * definida no se quede sin agendado al cambiar de nombre.
  */
 export const URL_WEBHOOK_CITA =
-  import.meta.env.VITE_N8N_WEBHOOK_CITA_URL ||
-  'https://pymelaunch.app.n8n.cloud/webhook/658b4044-87b4-4ae0-97be-92df63a8e226'
+  import.meta.env.VITE_N8N_WEBHOOK_SOLICITAR_CITA || import.meta.env.VITE_N8N_WEBHOOK_CITA_URL || ''
 
-/** ¿Hay webhook al que enviar la solicitud? */
-export const hayWebhookCita = Boolean(URL_WEBHOOK_CITA)
+/**
+ * Sin webhook, en desarrollo se simula la respuesta para no bloquear el
+ * trabajo en la tarjeta. Solo en desarrollo: en un build de producción
+ * simular haría creer al emprendedor que ha pedido una sesión que nadie
+ * ha recibido.
+ */
+const SIMULAR_CITA = !URL_WEBHOOK_CITA && import.meta.env.DEV
+
+/** ¿Se puede enviar la solicitud (de verdad o simulada)? */
+export const hayWebhookCita = Boolean(URL_WEBHOOK_CITA) || SIMULAR_CITA
+
+/** Espera de la respuesta simulada. */
+const ESPERA_SIMULADA_MS = 1000
 
 /** Corta la espera si n8n no responde. */
 const TIEMPO_MAXIMO_MS = 15000
@@ -44,18 +54,31 @@ const TIEMPO_MAXIMO_MS = 15000
  * Envía la solicitud de sesión al equipo de mentoría.
  *
  * @param {{
- *   id_usuario: string|null,
+ *   cliente_nombre: string|null,
+ *   cliente_email: string|null,
  *   expediente_id: string|null,
- *   cliente_nombre: string,
- *   cliente_email: string,
+ *   dia_seleccionado: string,
+ *   hora_seleccionada: string,
+ *   fecha_iso: string,
+ *   consentimiento_datos: boolean,
+ *   id_usuario: string|null,
  *   fecha_propuesta: string,
  *   fase: string,
  *   score_total: number,
  *   consentimiento_compartir_datos: boolean,
  * }} solicitud
- * @returns {Promise<{ ok: boolean, motivo?: string }>}
+ * @returns {Promise<{ ok: boolean, motivo?: string, simulada?: boolean }>}
  */
 export async function solicitarSesion(solicitud) {
+  if (SIMULAR_CITA) {
+    console.warn(
+      '[n8n] Falta VITE_N8N_WEBHOOK_SOLICITAR_CITA. La solicitud de sesión se simula ' +
+        '(solo en desarrollo) y no llega al Agente de Reservas.',
+      solicitud,
+    )
+    await new Promise((resolver) => setTimeout(resolver, ESPERA_SIMULADA_MS))
+    return { ok: true, simulada: true }
+  }
   if (!hayWebhookCita) return { ok: false, motivo: 'sin webhook configurado' }
 
   const cancelacion = new AbortController()
@@ -71,6 +94,14 @@ export async function solicitarSesion(solicitud) {
 
     if (!respuesta.ok) {
       return { ok: false, motivo: `el servidor respondió ${respuesta.status}` }
+    }
+
+    // El agente puede contestar `{ success: false }` con un 200 (por
+    // ejemplo, si el hueco ya está ocupado). Un cuerpo vacío o que no sea
+    // JSON se da por bueno: lo que manda es el código HTTP.
+    const cuerpo = await respuesta.json().catch(() => null)
+    if (cuerpo?.success === false) {
+      return { ok: false, motivo: cuerpo.message || cuerpo.mensaje || 'el agente de citas ha rechazado la solicitud' }
     }
 
     return { ok: true }

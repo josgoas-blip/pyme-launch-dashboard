@@ -15,6 +15,7 @@ import {
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
 import { solicitarSesion, leerCitaRemota, hayWebhookCita, cancelarCita } from '../../services/citaService.js'
 import CancelarSesionModal from './CancelarSesionModal.jsx'
+import Toast from '../ui/Toast.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
 import { suscribirseAlExpediente } from '../../services/realtimeExpediente.js'
 import { obtenerClienteAnonimo } from '../../services/diagnosticoService.js'
@@ -184,6 +185,10 @@ export default function SesionEstrategicaCard() {
    * preferencia que se deje configurada una vez.
    */
   const [consentimiento, setConsentimiento] = useState(false)
+
+  /** Aviso flotante tras enviar la solicitud: `{ tipo, mensaje }` o `null`. */
+  const [toast, setToast] = useState(null)
+  const cerrarToast = useCallback(() => setToast(null), [])
 
   /**
    * La cita del diagnóstico manda; si no la hay, la copia local.
@@ -355,24 +360,40 @@ export default function SesionEstrategicaCard() {
       setError('Debes aceptar compartir los datos de tu diagnóstico para solicitar la sesión.')
       return
     }
+    // Solo valen los días y horas que ofrece el selector: un valor fuera de
+    // la lista (fin de semana, fuera de horario) no debe llegar al agente.
+    if (!dias.some((d) => d.iso === fecha) || !HORAS.includes(hora)) {
+      setError('Selecciona un día laborable y una hora de inicio entre las 10:00 y las 18:00.')
+      return
+    }
 
     setEnviando(true)
     setError(null)
+    setToast(null)
 
     const fechaPropuesta = `${fecha} ${hora}`
+    // Hora local del navegador convertida a UTC: el agente recibe un
+    // instante inequívoco aunque su servidor esté en otro huso.
+    const fechaIso = new Date(`${fecha}T${hora}:00`).toISOString()
 
     const resultado = await solicitarSesion({
+      // Contrato del Agente de Reservas. Nombre y correo reales de la
+      // sesión; sin sesión se envía `null`: un "Invitado" o un contacto de
+      // ejemplo llegarían al mentor como si fueran los del cliente.
+      cliente_nombre: userId ? nombreCompleto : null,
+      cliente_email: emailSesion ?? null,
+      // Fila de `diagnosticos` creada al guardar el cuestionario: permite a
+      // n8n escribir la cita en la fila correcta.
+      expediente_id: cargarExpedienteId(),
+      dia_seleccionado: fecha,
+      hora_seleccionada: hora,
+      fecha_iso: fechaIso,
+      consentimiento_datos: true,
+      // Campos del contrato anterior, que siguen leyendo los nodos que
+      // escriben la cita en Supabase.
       // Con sesión iniciada manda el `user_id` real; sin ella, el cliente
       // anónimo estable que ya usa el servicio de diagnóstico.
       id_usuario: userId ?? obtenerClienteAnonimo(),
-      // El expediente es la fila de `diagnosticos` creada al guardar el
-      // cuestionario: permite a n8n escribir la cita en la fila correcta.
-      expediente_id: cargarExpedienteId(),
-      // Nombre y correo reales de la sesión (perfil → registro → correo).
-      // Sin sesión se envía `null`: el literal "Invitado" o un contacto
-      // de ejemplo llegarían al mentor como si fueran los del cliente.
-      cliente_nombre: userId ? nombreCompleto : null,
-      cliente_email: emailSesion ?? null,
       fecha_propuesta: fechaPropuesta,
       fase: respuestas?.fase_embudo || 'Tracción',
       score_total: respuestas?.score_total ?? 78,
@@ -384,9 +405,14 @@ export default function SesionEstrategicaCard() {
     setEnviando(false)
 
     if (!resultado.ok) {
-      setError(`No se ha podido enviar la solicitud: ${resultado.motivo}.`)
+      setToast({ tipo: 'error', mensaje: `No se ha podido enviar la solicitud: ${resultado.motivo}.` })
       return
     }
+
+    setToast({
+      tipo: 'exito',
+      mensaje: 'Solicitud enviada con éxito. El agente de citas procesará tu horario.',
+    })
 
     const guardada = {
       estado: 'en_revision',
@@ -496,6 +522,15 @@ export default function SesionEstrategicaCard() {
       </>
     )
 
+  const avisoFlotante = toast && (
+    <Toast
+      tipo={toast.tipo}
+      mensaje={toast.mensaje}
+      accion={toast.tipo === 'error' ? { etiqueta: 'Reintentar', alPulsar: enviar } : undefined}
+      alCerrar={cerrarToast}
+    />
+  )
+
   // ── Estado confirmado ───────────────────────────────────────────────
   if (cita?.estado === ESTADO_CITA.CONFIRMADA) {
     const cuando = formatearFechaCita(cita.fecha)
@@ -598,6 +633,7 @@ export default function SesionEstrategicaCard() {
         {/* Por si se eligió mal la fecha: se retira la solicitud y se vuelve
             al formulario sin esperar a que el mentor la revise. */}
         {accionCancelar(cuando)}
+        {avisoFlotante}
       </Bloque>
     )
   }
@@ -797,9 +833,10 @@ export default function SesionEstrategicaCard() {
 
       {!hayWebhookCita && (
         <p className="mt-3 text-xs" style={{ color: TEXTO_SUAVE }}>
-          El agendado está desactivado: falta definir VITE_N8N_WEBHOOK_CITA_URL.
+          El agendado está desactivado: falta definir VITE_N8N_WEBHOOK_SOLICITAR_CITA.
         </p>
       )}
+      {avisoFlotante}
     </Bloque>
   )
 }
