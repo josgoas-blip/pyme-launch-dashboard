@@ -2,6 +2,7 @@ import BloqueHeader from './BloqueHeader.jsx'
 import PerfilClienteCard from './PerfilClienteCard.jsx'
 import SesionEstrategicaCard from './SesionEstrategicaCard.jsx'
 import ConsolaExportacionCard from './ConsolaExportacionCard.jsx'
+import InformeHtmlCard from './InformeHtmlCard.jsx'
 
 /**
  * Ensambla la pestaña "Configuración" en 3 bloques de lectura progresiva:
@@ -42,8 +43,9 @@ export default function ConfiguracionView() {
         <BloqueHeader
           numero={3}
           titulo="Consola de Exportación"
-          subtitulo="Informe ejecutivo en PDF y modelo económico en CSV"
+          subtitulo="Informe ejecutivo y modelo económico en CSV"
         />
+        <InformeHtmlCard />
         <ConsolaExportacionCard />
       </section>
     </div>

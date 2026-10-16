@@ -44,6 +44,17 @@ import {
 import { cargarExpedienteConsultor } from './services/consultorService.js'
 import { ModoLecturaProvider } from './context/ModoLecturaContext.jsx'
 import BannerConsultor from './components/consultor/BannerConsultor.jsx'
+import { ExpedienteEmprendedorProvider } from './context/ExpedienteEmprendedorContext.jsx'
+import {
+  leerRuta,
+  reemplazarRuta,
+  esRuta,
+  urlLogin,
+  destinoTrasLogin,
+  idExpedienteDeRuta,
+  RUTA_DASHBOARD,
+  RUTA_LOGIN,
+} from './utils/rutas.js'
 import EnlaceNoValido from './components/consultor/EnlaceNoValido.jsx'
 
 const VISTAS_POR_PESTANA = {
@@ -131,6 +142,7 @@ function PanelConsultor({ expedienteId, token }) {
 function Enrutador() {
   const {
     userId,
+    email,
     nombreCompleto,
     cargando: cargandoSesion,
     authDisponible,
@@ -156,6 +168,13 @@ function Enrutador() {
    */
   const [enlaceRecuperacion, setEnlaceRecuperacion] = useState(llegoDesdeEnlaceRecuperacion)
   const mostrandoRecuperacion = enlaceRecuperacion || recuperandoPassword
+
+  /**
+   * Ruta actual (`/login` o `/dashboard`, con su query). Se guarda en el
+   * estado porque los cambios de URL se hacen con `replaceState`, que no
+   * provoca render.
+   */
+  const [ruta, setRuta] = useState(leerRuta)
 
   /** Modo con el que se abre la pantalla de acceso. */
   const [modoAcceso, setModoAcceso] = useState('login')
@@ -277,7 +296,7 @@ function Enrutador() {
    *
    *   - Si lo tiene, el panel se pinta con sus datos; el cuestionario no
    *     vuelve a aparecer salvo que pulse "Nuevo diagnóstico".
-   *   - Si no lo tiene, va al cuestionario.
+   *   - Si no lo tiene, entra al panel con el aviso de completarlo.
    *   - Si no se puede saber, se le dice y se le deja reintentar, en lugar
    *     de mandarle a repetir un cuestionario que quizá ya hizo.
    *
@@ -379,6 +398,24 @@ function Enrutador() {
   }, [authDisponible, cargandoSesion, userId])
 
   /**
+   * Rutas: sin sesión, todo va a `/login` (recordando el `?id=` del panel
+   * para volver a él); con sesión, a `/dashboard`.
+   *
+   * No aplica al Modo Consultor ni a la recuperación de contraseña, que
+   * tienen sus propias rutas, ni a una instalación sin Supabase, que no
+   * tiene pantalla de acceso.
+   */
+  useEffect(() => {
+    if (paramsConsultor.activo || mostrandoRecuperacion || cargandoSesion || !authDisponible) return
+
+    if (!userId) {
+      if (!esRuta(ruta.pathname, RUTA_LOGIN)) setRuta(reemplazarRuta(urlLogin(ruta)))
+    } else if (!esRuta(ruta.pathname, RUTA_DASHBOARD)) {
+      setRuta(reemplazarRuta(destinoTrasLogin(ruta)))
+    }
+  }, [paramsConsultor.activo, mostrandoRecuperacion, cargandoSesion, authDisponible, userId, ruta])
+
+  /**
    * Recibe las respuestas del wizard y habilita la vista del Dashboard.
    *
    * La sesión se guarda en el navegador de forma síncrona —es lo que
@@ -457,6 +494,7 @@ function Enrutador() {
   /** Sale de la pantalla de recuperación y limpia la URL. */
   const terminarRecuperacion = (siguienteModoAcceso = 'login') => {
     salirDeRutaRecuperacion()
+    setRuta(leerRuta())
     finalizarRecuperacion()
     setEnlaceRecuperacion(false)
     setModoAcceso(siguienteModoAcceso)
@@ -514,21 +552,20 @@ function Enrutador() {
           onComplete={handleOnboardingComplete}
           respuestasPrevias={reevaluacion?.respuestas ?? null}
           expedienteAnteriorId={reevaluacion?.expedienteId ?? null}
-          // Solo se puede volver si hay un panel al que volver: con diagnóstico,
-          // o como cliente con proyecto que aún no lo ha completado.
-          onCancelar={respuestas || busqueda.estado === 'solo-proyecto' ? cancelarReevaluacion : null}
+          // Siempre hay un panel al que volver: también sin diagnóstico.
+          onCancelar={cancelarReevaluacion}
         />
       </OnboardingProvider>
     )
   }
 
   const busquedaResuelta = busqueda.userId === userId
-  const soloProyecto = respuestas === null && busquedaResuelta && busqueda.estado === 'solo-proyecto'
 
-  if (respuestas === null && !soloProyecto) {
-
-    // No se pudo saber si tiene diagnóstico: ni panel ni cuestionario.
-    if (userId && busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
+  // El diagnóstico no es obligatorio para entrar: sin él, el panel se abre
+  // igualmente y cada pestaña que lo necesita invita a hacerlo.
+  if (respuestas === null && userId) {
+    // No se pudo saber si tiene diagnóstico: se avisa y se deja reintentar.
+    if (busquedaResuelta && ['error', 'ilegible'].includes(busqueda.estado)) {
       return (
         <HistorialNoDisponible
           motivo={busqueda.estado}
@@ -542,21 +579,11 @@ function Enrutador() {
       )
     }
 
-    // El cuestionario solo aparece cuando está claro que toca: sin
-    // diagnóstico ni proyecto en Supabase, o sin autenticación. Antes de
-    // saberlo se muestra la carga; si no, el cuestionario asomaría un
-    // instante a un usuario recurrente mientras se consulta su historial.
-    const tocaCuestionario = !userId || (busquedaResuelta && busqueda.estado === 'sin-diagnostico')
-
-    if (!tocaCuestionario) {
+    // Mientras se consulta el historial: si no, un usuario recurrente vería
+    // un instante el panel vacío antes de cargarse su diagnóstico.
+    if (!busquedaResuelta) {
       return <PantallaCargando mensaje="Cargando tu panel…" />
     }
-
-    return (
-      <OnboardingProvider respuestas={null} onReiniciar={handleReiniciarOnboarding}>
-        <OnboardingWizard onComplete={handleOnboardingComplete} />
-      </OnboardingProvider>
-    )
   }
 
   // El panel espera a conocer el plan contratado: con el plan de entrada
@@ -567,35 +594,37 @@ function Enrutador() {
   }
 
   return (
-    <OnboardingProvider respuestas={respuestas} expediente={expediente} onReiniciar={handleReiniciarOnboarding}>
-      {/* La aplicación se oculta al imprimir: el PDF solo lleva el informe.
-          Por eso el informe se monta fuera de este árbol. */}
-      <div className="no-imprimir">
-        <AppLayout nombreUsuario={nombreCompleto}>
-          {(activeTab) => {
-            const Vista = VISTAS_POR_PESTANA[activeTab]
-            const sinDiagnostico = respuestas === null
-            return (
-              <>
-                <AvisoSincronizacion sincronizacion={sincronizacion} onReintentar={reintentarSubida} />
-                {sinDiagnostico && activeTab === 'inicio' && (
-                  <DiagnosticoPendiente compacto onEmpezar={handleReiniciarOnboarding} />
-                )}
-                {sinDiagnostico && PESTANAS_DE_DIAGNOSTICO.includes(activeTab) ? (
-                  <DiagnosticoPendiente onEmpezar={handleReiniciarOnboarding} />
-                ) : (
-                  <Vista />
-                )}
-              </>
-            )
-          }}
-        </AppLayout>
-      </div>
-
-      {/* Informe Ejecutivo: invisible en pantalla, es lo único que compone
-          el navegador al generar el PDF. Sin diagnóstico no hay informe. */}
-      {respuestas && <InformeEjecutivo respuestas={respuestas} />}
-    </OnboardingProvider>
+    <ExpedienteEmprendedorProvider email={email} idExpediente={idExpedienteDeRuta(ruta)}>
+      <OnboardingProvider respuestas={respuestas} expediente={expediente} onReiniciar={handleReiniciarOnboarding}>
+        {/* La aplicación se oculta al imprimir: el PDF solo lleva el informe.
+            Por eso el informe se monta fuera de este árbol. */}
+        <div className="no-imprimir">
+          <AppLayout nombreUsuario={nombreCompleto}>
+            {(activeTab) => {
+              const Vista = VISTAS_POR_PESTANA[activeTab]
+              const sinDiagnostico = respuestas === null
+              return (
+                <>
+                  <AvisoSincronizacion sincronizacion={sincronizacion} onReintentar={reintentarSubida} />
+                  {sinDiagnostico && activeTab === 'inicio' && (
+                    <DiagnosticoPendiente compacto onEmpezar={handleReiniciarOnboarding} />
+                  )}
+                  {sinDiagnostico && PESTANAS_DE_DIAGNOSTICO.includes(activeTab) ? (
+                    <DiagnosticoPendiente onEmpezar={handleReiniciarOnboarding} />
+                  ) : (
+                    <Vista />
+                  )}
+                </>
+              )
+            }}
+          </AppLayout>
+        </div>
+  
+        {/* Informe Ejecutivo: invisible en pantalla, es lo único que compone
+            el navegador al generar el PDF. Sin diagnóstico no hay informe. */}
+        {respuestas && <InformeEjecutivo respuestas={respuestas} />}
+      </OnboardingProvider>
+    </ExpedienteEmprendedorProvider>
   )
 }
 

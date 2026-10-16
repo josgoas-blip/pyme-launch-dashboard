@@ -77,7 +77,7 @@ export function DiagnosticoPendiente({ onEmpezar, compacto = false }) {
             <p className="text-base font-bold text-[#1F2937]">Completa tu diagnóstico</p>
             <p className="mt-1 text-sm leading-relaxed text-[#4B5563]">
               {compacto
-                ? 'Tu proyecto ya está registrado. Responde el diagnóstico para ver tu score, tus riesgos y tu plan de acción.'
+                ? 'Responde el diagnóstico cuando quieras para ver tu score, tus riesgos y tu plan de acción.'
                 : 'Esta pestaña se calcula a partir de tu diagnóstico. Respóndelo para ver aquí tus resultados.'}
             </p>
           </div>

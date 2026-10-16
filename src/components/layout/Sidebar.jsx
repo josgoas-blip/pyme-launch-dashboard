@@ -1,7 +1,6 @@
 import { Home, BarChart3, Target, Wallet, Settings, GraduationCap, ExternalLink, X } from 'lucide-react'
 import { TABS } from './TabNav.jsx'
-
-const URL_ACADEMIA = 'https://pyme-launch-academy.vercel.app'
+import { URL_ACADEMIA } from '../../utils/enlaces.js'
 
 /** Icono de cada pestaña, en el mismo orden del menú. */
 const ICONO_POR_PESTANA = {
