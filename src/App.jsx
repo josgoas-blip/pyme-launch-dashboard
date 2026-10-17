@@ -10,7 +10,6 @@ import AnalisisView from './components/dashboard/AnalisisView.jsx'
 import EstrategiaView from './components/dashboard/EstrategiaView.jsx'
 import ViabilidadView from './components/dashboard/ViabilidadView.jsx'
 import ConfiguracionView from './components/dashboard/ConfiguracionView.jsx'
-import InformeEjecutivo from './components/informe/InformeEjecutivo.jsx'
 import { PlanProvider, usePlan } from './context/PlanContext.jsx'
 import { OnboardingProvider } from './context/OnboardingContext.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
@@ -131,8 +130,6 @@ function PanelConsultor({ expedienteId, token }) {
               }}
             </AppLayout>
           </div>
-
-          <InformeEjecutivo respuestas={respuestas} />
         </OnboardingProvider>
       </PlanProvider>
     </ModoLecturaProvider>
