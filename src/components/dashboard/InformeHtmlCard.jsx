@@ -40,7 +40,8 @@ function Aviso({ icono: Icono, titulo, children, accion }) {
 }
 
 /**
- * Cuadrante "Informe Ejecutivo" de la Consola de Exportación.
+ * Cuadrante "Informe Ejecutivo" de Configuración: visor de solo lectura,
+ * sin botones de descarga ni de impresión.
  *
  * Pinta `Entrepreneur_diagnostics.informe_html` solo si el expediente tiene
  * `estado_pago = 'activo'`, y siempre pasado por `sanitizeReportHtml`: el

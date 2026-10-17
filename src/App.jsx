@@ -619,10 +619,10 @@ function Enrutador() {
             }}
           </AppLayout>
         </div>
-  
-        {/* Informe Ejecutivo: invisible en pantalla, es lo único que compone
-            el navegador al generar el PDF. Sin diagnóstico no hay informe. */}
-        {respuestas && <InformeEjecutivo respuestas={respuestas} />}
+
+        {/* El emprendedor no recibe el Informe Ejecutivo imprimible: para
+            proteger la propiedad intelectual solo lo lee en la plataforma
+            (InformeHtmlCard), sin descarga ni impresión. */}
       </OnboardingProvider>
     </ExpedienteEmprendedorProvider>
   )
