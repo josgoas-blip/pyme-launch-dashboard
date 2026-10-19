@@ -123,8 +123,12 @@ export async function solicitarSesion(solicitud) {
  * de variables del modelo en cada sondeo. No se piden `estado_cita` ni
  * `estado`: no existen en esta tabla y pedirlas hacía fallar la consulta
  * entera con un 42703.
+ *
+ * `estado_reserva`, `fecha_sesion`, `motivo_cancelacion` y `meet_url` son las
+ * columnas donde n8n deja la contrapropuesta del consultor.
  */
-const COLUMNAS_CITA = 'id, user_id, respuestas, fase_embudo'
+const COLUMNAS_CITA =
+  'id, user_id, respuestas, fase_embudo, estado_reserva, fecha_sesion, motivo_cancelacion, meet_url'
 
 /**
  * Filas que se revisan cuando no hay expediente guardado.
@@ -442,5 +446,165 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
       cita?.estado === 'pendiente'
         ? `No se ha podido anular la solicitud: ${detalle}${sinAviso}. Escribe a tu mentor para anularla.`
         : `No se ha podido cancelar: ${detalle}${sinAviso}. Escribe a tu mentor para cancelarla.`,
+  }
+}
+
+// ── Aceptación de la propuesta del consultor ─────────────────────────────
+
+/**
+ * Webhook de n8n que recibe la aceptación de la fecha propuesta por el
+ * consultor (crea el evento y el Meet, y avisa al mentor).
+ *
+ * Sin valor por defecto, por lo mismo que el de cancelación: reutilizar el
+ * de agendado abriría una solicitud nueva en vez de cerrar esta.
+ */
+export const URL_WEBHOOK_ACEPTAR_PROPUESTA = import.meta.env.VITE_N8N_WEBHOOK_ACEPTAR_PROPUESTA_URL || ''
+
+/** ¿Hay webhook de aceptación? */
+export const hayWebhookAceptarPropuesta = Boolean(URL_WEBHOOK_ACEPTAR_PROPUESTA)
+
+/**
+ * Marca como confirmada en su fila la cita propuesta por el consultor.
+ *
+ * Se escribe `estado_reserva = 'confirmada'` y también `respuestas.cita`:
+ * la tarjeta lee la cita de ahí en cuanto la fila deja de estar en
+ * 'propuesta_mentor', y si conservara la cancelación anterior el emprendedor
+ * volvería a ver el formulario con la sesión ya aceptada.
+ *
+ * @param {string} filaId
+ * @param {{ fechaIso: string, meetUrl: string|null, aceptadaEn: string }} aceptacion
+ * @returns {Promise<{ ok: true } | { ok: false, motivo: 'sin-permiso'|'no-encontrada'|'error' }>}
+ */
+async function marcarPropuestaAceptadaEnSupabase(filaId, { fechaIso, meetUrl, aceptadaEn }) {
+  const { data: fila, error: errorLectura } = await supabase
+    .from('diagnosticos')
+    .select('id, respuestas')
+    .eq('id', filaId)
+    .maybeSingle()
+
+  if (errorLectura) return { ok: false, motivo: 'error' }
+  if (!fila) return { ok: false, motivo: 'no-encontrada' }
+
+  const eraTexto = typeof fila.respuestas === 'string'
+  const json = parsearRespuestas(fila.respuestas) ?? {}
+  const nuevas = {
+    ...json,
+    cita: {
+      estado: 'confirmada',
+      fecha: fechaIso,
+      meet_url: meetUrl,
+      origen: 'propuesta_mentor',
+      aceptada_en: aceptadaEn,
+    },
+  }
+
+  const { data, error } = await supabase
+    .from('diagnosticos')
+    .update({
+      respuestas: eraTexto ? JSON.stringify(nuevas) : nuevas,
+      estado_reserva: 'confirmada',
+      fecha_sesion: fechaIso,
+    })
+    .eq('id', filaId)
+    .select('id')
+
+  if (error) return { ok: false, motivo: error.code === '42501' ? 'sin-permiso' : 'error' }
+  if (!data?.length) return { ok: false, motivo: 'sin-permiso' }
+  return { ok: true }
+}
+
+/**
+ * Avisa a n8n de que el emprendedor acepta la fecha propuesta.
+ *
+ * @param {Record<string, unknown>} aviso
+ * @returns {Promise<boolean|null>} `null` si no hay webhook configurado.
+ */
+async function avisarAceptacionAN8n(aviso) {
+  if (!hayWebhookAceptarPropuesta) return null
+
+  const cancelacion = new AbortController()
+  const temporizador = setTimeout(() => cancelacion.abort(), TIEMPO_MAXIMO_MS)
+  try {
+    const respuesta = await fetch(URL_WEBHOOK_ACEPTAR_PROPUESTA, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aviso),
+      signal: cancelacion.signal,
+    })
+    if (!respuesta.ok) return false
+    const cuerpo = await respuesta.json().catch(() => null)
+    return cuerpo?.success !== false
+  } catch {
+    return false
+  } finally {
+    clearTimeout(temporizador)
+  }
+}
+
+/**
+ * Acepta la fecha que ha propuesto el consultor.
+ *
+ * Mismas dos vías que la cancelación, y basta con que funcione una: el
+ * webhook de n8n (que además crea el evento y avisa al mentor) y la
+ * actualización directa en Supabase, que puede fallar por RLS si la fila la
+ * creó n8n sin `user_id`. Si fallan las dos no se da por aceptada: el
+ * emprendedor creería tener una sesión que nadie ha agendado.
+ *
+ * @param {{
+ *   cita: import('../utils/citaDiagnostico.js').CitaNormalizada,
+ *   contacto: { id_usuario: string|null, expediente_id: string|null, cliente_nombre: string|null, cliente_email: string|null },
+ * }} datos
+ * @returns {Promise<
+ *   | { ok: true, aceptadaEn: string, enSupabase: boolean, avisoMentor: boolean|null }
+ *   | { ok: false, motivo: string }
+ * >}
+ */
+export async function aceptarPropuestaMentor({ cita, contacto }) {
+  if (!cita?.fecha) return { ok: false, motivo: 'La propuesta no indica fecha. Escribe a tu consultor.' }
+  if (!haySupabase && !hayWebhookAceptarPropuesta) {
+    return { ok: false, motivo: 'La aceptación no está disponible en esta instalación.' }
+  }
+
+  const fechaIso = cita.fecha.toISOString()
+  const aceptadaEn = new Date().toISOString()
+
+  const resultadoSupabase =
+    haySupabase && cita.filaId
+      ? await marcarPropuestaAceptadaEnSupabase(cita.filaId, {
+          fechaIso,
+          meetUrl: cita.meetUrl ?? null,
+          aceptadaEn,
+        }).catch(() => ({ ok: false, motivo: 'error' }))
+      : { ok: false, motivo: 'no-encontrada' }
+
+  const avisoMentor = await avisarAceptacionAN8n({
+    tipo: 'aceptacion_propuesta_mentor',
+    ...contacto,
+    fila_cita_id: cita.filaId ?? null,
+    fecha_sesion: fechaIso,
+    comentario_mentor: cita.comentarioMentor ?? null,
+    aceptada_en: aceptadaEn,
+    // Para que n8n sepa si le toca actualizar la fila con sus permisos.
+    actualizada_en_supabase: resultadoSupabase.ok,
+  })
+
+  if (resultadoSupabase.ok || avisoMentor === true) {
+    return { ok: true, aceptadaEn, enSupabase: resultadoSupabase.ok, avisoMentor }
+  }
+
+  const detalle =
+    resultadoSupabase.motivo === 'sin-permiso'
+      ? 'la base de datos no permite modificar esta reserva desde tu cuenta'
+      : resultadoSupabase.motivo === 'no-encontrada'
+        ? 'no se ha encontrado la reserva'
+        : 'no hay conexión con el servidor'
+  const sinAviso =
+    avisoMentor === false
+      ? ' y no se ha podido avisar al equipo de mentoría'
+      : ' y no hay un canal configurado para avisar al equipo de mentoría'
+
+  return {
+    ok: false,
+    motivo: `No se ha podido confirmar la fecha: ${detalle}${sinAviso}. Escribe a tu consultor para aceptarla.`,
   }
 }

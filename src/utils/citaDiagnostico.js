@@ -18,7 +18,7 @@
 /**
  * Cita ya normalizada, tal y como la consume la vista.
  * @typedef {Object} CitaNormalizada
- * @property {'sin_solicitar'|'pendiente'|'confirmada'|'cancelada'} estado
+ * @property {'sin_solicitar'|'pendiente'|'confirmada'|'cancelada'|'propuesta_mentor'} estado
  * @property {Date|null} fecha - Momento de la sesión, o `null` si no consta.
  * @property {string|null} meetUrl - Enlace de videollamada, o `null`.
  * @property {string|null} estadoOriginal - Valor tal cual llegó, para depurar.
@@ -28,6 +28,10 @@
  * @property {'pendiente'|'confirmada'|null} estadoAnterior - Si se canceló una
  *   solicitud aún en revisión o una sesión ya confirmada.
  * @property {Date|null} fechaAnterior - Fecha de la sesión o solicitud cancelada.
+ * @property {string|null} [comentarioMentor] - Nota del consultor que acompaña
+ *   a su propuesta de fecha.
+ * @property {Date|null} [propuestaDescartada] - Fecha propuesta por el
+ *   consultor que el emprendedor descartó al pedir otro día.
  */
 
 /** Estados canónicos, en orden de avance. */
@@ -42,6 +46,11 @@ export const ESTADO_CITA = {
    * mostrarse como confirmadas.
    */
   CANCELADA: 'cancelada',
+  /**
+   * El consultor ha propuesto otra fecha y espera la respuesta del
+   * emprendedor. Lo escribe n8n en la columna `estado_reserva`.
+   */
+  PROPUESTA_MENTOR: 'propuesta_mentor',
 }
 
 /**
@@ -64,6 +73,7 @@ const SINONIMOS = {
     'pending',
   ],
   [ESTADO_CITA.CANCELADA]: ['cancelada', 'cancelado', 'anulada', 'anulado', 'cancelled', 'canceled'],
+  [ESTADO_CITA.PROPUESTA_MENTOR]: ['propuesta_mentor', 'contrapropuesta', 'propuesta_consultor'],
 }
 
 /** Quita acentos y normaliza para comparar sin depender de la tilde. */
@@ -80,7 +90,7 @@ function clave(valor) {
  * Traduce un texto de estado al vocabulario canónico.
  *
  * @param {unknown} valor
- * @returns {'pendiente'|'confirmada'|'cancelada'|null} `null` si no lo reconoce.
+ * @returns {'pendiente'|'confirmada'|'cancelada'|'propuesta_mentor'|null} `null` si no lo reconoce.
  */
 export function estadoCanonico(valor) {
   const normalizado = clave(valor)
@@ -137,7 +147,14 @@ export function normalizarCita(cruda) {
     canceladaEn: parsearFechaCita(cruda.cancelada_en ?? cruda.canceladaEn),
     estadoAnterior: estadoCanonico(cruda.estado_anterior ?? cruda.estadoAnterior),
     fechaAnterior: parsearFechaCita(cruda.fecha_anterior ?? cruda.fechaAnterior),
+    comentarioMentor: textoLimpio(cruda.comentario_mentor ?? cruda.comentarioMentor),
+    propuestaDescartada: parsearFechaCita(cruda.propuesta_descartada ?? cruda.propuestaDescartada),
   }
+}
+
+/** Texto recortado, o `null` si no hay nada que mostrar. */
+function textoLimpio(valor) {
+  return typeof valor === 'string' && valor.trim() ? valor.trim() : null
 }
 
 /**
@@ -223,8 +240,14 @@ export function identidadesDeFila(fila) {
 /**
  * Extrae la cita de una fila de `diagnosticos`.
  *
- * Prioridad: el objeto `respuestas.cita`, que es el que trae fecha y
- * enlace; después las columnas sueltas, que solo aportan estado.
+ * Prioridad:
+ *   1. `estado_reserva = 'propuesta_mentor'`: el consultor ha propuesto otra
+ *      fecha. n8n la escribe en columnas sueltas (`fecha_sesion`,
+ *      `motivo_cancelacion`) sin tocar `respuestas`, donde puede seguir la
+ *      cita cancelada de antes; si mandara `respuestas`, el emprendedor vería
+ *      "Has cancelado tu sesión anterior" e ignoraría la propuesta.
+ *   2. El objeto `respuestas.cita`, que es el que trae fecha y enlace.
+ *   3. Las columnas sueltas, que solo aportan estado.
  *
  * Sobre `fase_embudo`: en este esquema esa columna guarda la fase del
  * modelo ("Idea", "Validación", "Tracción", "Consolidación"), no el estado
@@ -243,10 +266,28 @@ export function extraerCitaDeFila(fila) {
   // cadena JSON (lo escribe n8n): se normaliza antes de buscar la cita.
   const respuestas = parsearRespuestas(fila.respuestas)
 
+  // De `estado_reserva` solo se atiende a este valor: el resto (sobre todo
+  // el 'pendiente' por defecto) no dice nada fiable de la cita; ver abajo.
+  if (estadoCanonico(fila.estado_reserva) === ESTADO_CITA.PROPUESTA_MENTOR) {
+    return {
+      estado: ESTADO_CITA.PROPUESTA_MENTOR,
+      fecha: parsearFechaCita(fila.fecha_sesion),
+      meetUrl: fila.meet_url ?? null,
+      estadoOriginal: String(fila.estado_reserva),
+      filaId: fila.id ?? null,
+      motivo: null,
+      canceladaEn: null,
+      estadoAnterior: null,
+      fechaAnterior: null,
+      comentarioMentor: textoLimpio(fila.motivo_cancelacion),
+      propuestaDescartada: null,
+    }
+  }
+
   const desdeObjeto = normalizarCita(respuestas?.cita ?? fila.cita)
   if (desdeObjeto) return { ...desdeObjeto, filaId: fila.id ?? null }
 
-  // `estado_reserva` no se consulta: vale 'pendiente' por defecto en todas
+  // `estado_reserva` no se consulta como estado general: vale 'pendiente' por defecto en todas
   // las filas de la tabla, diagnósticos incluidos, y leerlo convertiría a
   // cualquier usuario en alguien con una sesión "en revisión".
   for (const columna of ['estado_cita', 'estado', 'fase_embudo']) {

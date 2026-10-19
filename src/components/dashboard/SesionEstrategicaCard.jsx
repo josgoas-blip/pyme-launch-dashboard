@@ -10,10 +10,18 @@ import {
   ShieldCheck,
   UserRound,
   CalendarX,
+  CalendarClock,
+  MessageSquareQuote,
   Info,
 } from 'lucide-react'
 import { useOnboarding } from '../../context/OnboardingContext.jsx'
-import { solicitarSesion, leerCitaRemota, hayWebhookCita, cancelarCita } from '../../services/citaService.js'
+import {
+  solicitarSesion,
+  leerCitaRemota,
+  hayWebhookCita,
+  cancelarCita,
+  aceptarPropuestaMentor,
+} from '../../services/citaService.js'
 import CancelarSesionModal from './CancelarSesionModal.jsx'
 import Toast from '../ui/Toast.jsx'
 import { leerFichaExpediente } from '../../services/expedienteService.js'
@@ -34,6 +42,9 @@ const SUPERFICIE = '#FAF9F5'
 const BORDE = '#E0DCD3'
 const TEXTO = '#2C3E35'
 const TEXTO_SUAVE = '#4B5563'
+const AMBAR = '#B45309' // Texto de la etiqueta de propuesta del consultor
+const AMBAR_SUAVE = '#FFFBEB' // Fondo de la tarjeta de propuesta
+const AMBAR_BORDE = '#FCD34D'
 
 /** Duración de la sesión, en minutos. */
 const DURACION_MIN = 60
@@ -156,7 +167,9 @@ function Cabecera({ titulo = 'Sesión Estratégica de Mentoría', icono: Icono =
 /**
  * Bloque de agendado de la Sesión Estratégica con el mentor.
  *
- * Tres estados, resueltos en este orden de prioridad:
+ * Estados: confirmada, propuesta del consultor (`estado_reserva =
+ * 'propuesta_mentor'`, que manda sobre la cita guardada en `respuestas`),
+ * en revisión y sin solicitar. La cita se resuelve en este orden:
  *   1. `respuestas.cita` del diagnóstico — lo que escribe n8n al aprobar.
  *   2. La copia remota que se pueda leer de Supabase.
  *   3. La copia local del navegador, que es lo que sostiene el estado
@@ -219,6 +232,16 @@ export default function SesionEstrategicaCard() {
   const [cancelando, setCancelando] = useState(false)
 
   /**
+   * Propuesta del consultor: el emprendedor ha pulsado "Elegir otra fecha"
+   * y ve el selector en lugar de la tarjeta de la propuesta.
+   */
+  const [eligiendoOtraFecha, setEligiendoOtraFecha] = useState(false)
+  /** Aceptación de la propuesta en curso. */
+  const [aceptando, setAceptando] = useState(false)
+  /** Error al aceptar la propuesta, o `null`. */
+  const [errorPropuesta, setErrorPropuesta] = useState(null)
+
+  /**
    * Avisos tras cancelar: qué se ha hecho y qué no (por ejemplo, si no se
    * pudo avisar automáticamente al mentor). Se muestran sobre el formulario.
    */
@@ -267,13 +290,36 @@ export default function SesionEstrategicaCard() {
     // Cancelada aquí pero todavía confirmada en Supabase: pasa cuando la
     // base de datos no dejó modificar la fila y la cancelación llegó por n8n,
     // que la actualizará después. Hasta entonces manda la cancelación.
+    // La propuesta del consultor no entra aquí: es posterior a la
+    // cancelación y es justo lo que el emprendedor tiene que ver.
     if (
       actual?.estado === ESTADO_CITA.CANCELADA &&
       actual.filaId &&
       actual.filaId === remota.filaId &&
-      remota.estado !== ESTADO_CITA.CANCELADA
+      remota.estado !== ESTADO_CITA.CANCELADA &&
+      remota.estado !== ESTADO_CITA.PROPUESTA_MENTOR
     ) {
       return
+    }
+    if (remota.estado === ESTADO_CITA.PROPUESTA_MENTOR) {
+      const mismaFecha = (otra) =>
+        Boolean(otra && remota.fecha && otra.getTime() === remota.fecha.getTime())
+      // Propuesta aceptada aquí cuya fila aún no ha actualizado n8n: es la
+      // misma fecha que ya figura confirmada.
+      if (
+        actual?.estado === ESTADO_CITA.CONFIRMADA &&
+        actual.filaId === remota.filaId &&
+        mismaFecha(actual.fecha)
+      ) {
+        return
+      }
+      // Propuesta descartada al pedir otro día: la nueva solicitud manda.
+      if (actual?.estado === ESTADO_CITA.PENDIENTE && mismaFecha(actual.propuestaDescartada)) return
+      // Una propuesta distinta de la que se estaba descartando vuelve a
+      // mostrarse en su tarjeta.
+      if (actual?.estado !== ESTADO_CITA.PROPUESTA_MENTOR || !mismaFecha(actual.fecha)) {
+        setEligiendoOtraFecha(false)
+      }
     }
     // Solicitud anulada antes de que n8n la registrara: cuando la fila
     // aparece, sigue "en revisión" para la misma fecha. Es la que se anuló.
@@ -375,6 +421,11 @@ export default function SesionEstrategicaCard() {
     // Hora local del navegador convertida a UTC: el agente recibe un
     // instante inequívoco aunque su servidor esté en otro huso.
     const fechaIso = new Date(`${fecha}T${hora}:00`).toISOString()
+    // Si se pide otro día en lugar de la fecha del consultor, se anota cuál
+    // se descarta: n8n lo necesita para cerrar la propuesta, y la tarjeta
+    // para no volver a mostrarla mientras la fila siga en 'propuesta_mentor'.
+    const propuestaDescartada =
+      cita?.estado === ESTADO_CITA.PROPUESTA_MENTOR && cita.fecha ? cita.fecha.toISOString() : null
 
     const resultado = await solicitarSesion({
       // Contrato del Agente de Reservas. Nombre y correo reales de la
@@ -400,6 +451,10 @@ export default function SesionEstrategicaCard() {
       // Queda registrado en el flujo de n8n: es la prueba de que el usuario
       // autorizó el acceso del mentor a sus métricas.
       consentimiento_compartir_datos: true,
+      ...(propuestaDescartada && {
+        propuesta_mentor_descartada: propuestaDescartada,
+        fila_cita_id: cita?.filaId ?? null,
+      }),
     })
 
     setEnviando(false)
@@ -421,9 +476,50 @@ export default function SesionEstrategicaCard() {
       // Se guarda también en local para poder acreditar cuándo se dio el
       // consentimiento sin depender de que n8n responda.
       consentimientoEn: new Date().toISOString(),
+      ...(propuestaDescartada && { propuesta_descartada: propuestaDescartada }),
     }
     guardarCitaLocal(guardada)
     setCita(normalizarCita(guardada))
+    setEligiendoOtraFecha(false)
+  }
+
+  /** Datos de contacto que acompañan a los avisos a n8n. */
+  const contacto = () => ({
+    id_usuario: userId ?? obtenerClienteAnonimo(),
+    expediente_id: cargarExpedienteId(),
+    cliente_nombre: userId ? nombreCompleto : null,
+    cliente_email: emailSesion ?? null,
+  })
+
+  /**
+   * Acepta la fecha propuesta por el consultor.
+   *
+   * Solo se da por confirmada si la aceptación se ha registrado (en Supabase
+   * o a través de n8n); entonces se guarda también en el navegador, igual
+   * que una confirmación leída de Supabase.
+   */
+  const aceptarPropuesta = async () => {
+    if (!cita?.fecha) return
+    setAceptando(true)
+    setErrorPropuesta(null)
+
+    const resultado = await aceptarPropuestaMentor({ cita, contacto: contacto() })
+
+    setAceptando(false)
+    if (!resultado.ok) {
+      setErrorPropuesta(resultado.motivo)
+      return
+    }
+
+    const confirmada = {
+      estado: 'confirmada',
+      fecha: cita.fecha.toISOString(),
+      meet_url: cita.meetUrl ?? undefined,
+      fila_id: cita.filaId,
+    }
+    guardarCitaLocal(confirmada)
+    setCita(normalizarCita(confirmada))
+    setToast({ tipo: 'exito', mensaje: 'Has aceptado la fecha propuesta. Tu sesión queda confirmada.' })
   }
 
   /**
@@ -440,12 +536,7 @@ export default function SesionEstrategicaCard() {
       filaId: cita?.filaId ?? null,
       motivo,
       cita,
-      contacto: {
-        id_usuario: userId ?? obtenerClienteAnonimo(),
-        expediente_id: cargarExpedienteId(),
-        cliente_nombre: userId ? nombreCompleto : null,
-        cliente_email: emailSesion ?? null,
-      },
+      contacto: contacto(),
     })
 
     if (!resultado.ok) return resultado
@@ -610,6 +701,137 @@ export default function SesionEstrategicaCard() {
         </p>
 
         {accionCancelar(cuando)}
+        {avisoFlotante}
+      </Bloque>
+    )
+  }
+
+  // ── Propuesta del consultor ─────────────────────────────────────────
+  if (cita?.estado === ESTADO_CITA.PROPUESTA_MENTOR && (soloLectura || !eligiendoOtraFecha)) {
+    const cuando = formatearFechaCita(cita.fecha)
+    const consultor = ficha?.principal?.nombre ?? null
+
+    // En Modo Consultor solo se informa: la respuesta es del emprendedor.
+    if (soloLectura) {
+      return (
+        <Bloque fondo={AMBAR_SUAVE} borde={AMBAR_BORDE}>
+          <Cabecera icono={CalendarClock} tono={AMBAR}>
+            Propuesta de fecha pendiente de respuesta
+          </Cabecera>
+          <p className="mt-4 text-sm leading-relaxed" style={{ color: TEXTO }}>
+            Se ha propuesto al emprendedor una sesión para el{' '}
+            <span className="font-bold">{cuando ?? 'día indicado'}</span>. Aún no ha respondido.
+          </p>
+          {cita.comentarioMentor && (
+            <p className="mt-2 text-sm leading-relaxed" style={{ color: TEXTO }}>
+              <span className="font-semibold">Nota enviada:</span> {cita.comentarioMentor}
+            </p>
+          )}
+        </Bloque>
+      )
+    }
+
+    return (
+      <Bloque fondo={AMBAR_SUAVE} borde={AMBAR_BORDE} grosor="border-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <Cabecera icono={CalendarClock}>Tu consultor te propone una nueva fecha</Cabecera>
+          <span
+            className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider"
+            style={{ backgroundColor: '#FEF3C7', borderColor: AMBAR_BORDE, color: AMBAR }}
+          >
+            Nueva propuesta de tu consultor
+          </span>
+        </div>
+
+        {/* Fecha propuesta. Se formatea en hora de Madrid, la del calendario
+            del consultor, sea cual sea el huso del navegador. */}
+        <div
+          className="mt-5 flex items-start gap-3 rounded-xl border bg-white p-4"
+          style={{ borderColor: BORDE }}
+        >
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: `${VERDE}1A`, color: VERDE }}
+          >
+            <CalendarDays className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: TEXTO_SUAVE }}>
+              Fecha y hora propuestas
+            </p>
+            <p className="mt-0.5 text-base font-bold first-letter:uppercase" style={{ color: TEXTO }}>
+              {cuando ?? 'Fecha por concretar'}
+            </p>
+            <p className="mt-0.5 text-xs" style={{ color: TEXTO_SUAVE }}>
+              Hora peninsular española · Duración: {DURACION_MIN} minutos
+            </p>
+          </div>
+        </div>
+
+        {cita.comentarioMentor && (
+          <figure
+            className="mt-4 rounded-xl border p-4"
+            style={{ backgroundColor: `${VERDE}0D`, borderColor: `${VERDE}26` }}
+          >
+            <figcaption
+              className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: TEXTO_SUAVE }}
+            >
+              <MessageSquareQuote className="h-3.5 w-3.5" style={{ color: VERDE }} aria-hidden="true" />
+              {consultor ? `Mensaje de ${consultor}` : 'Mensaje de tu consultor'}
+            </figcaption>
+            <blockquote className="mt-2 whitespace-pre-line text-sm leading-relaxed" style={{ color: TEXTO }}>
+              {cita.comentarioMentor}
+            </blockquote>
+          </figure>
+        )}
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={aceptarPropuesta}
+            disabled={aceptando || !cita.fecha}
+            className="inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ backgroundColor: VERDE }}
+          >
+            {aceptando ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Confirmando…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                Aceptar fecha propuesta
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setErrorPropuesta(null)
+              setEligiendoOtraFecha(true)
+            }}
+            disabled={aceptando}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-5 py-3 text-sm font-semibold transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ borderColor: BORDE, color: TEXTO }}
+          >
+            <CalendarDays className="h-4 w-4" aria-hidden="true" />
+            Elegir otra fecha
+          </button>
+        </div>
+
+        {errorPropuesta && (
+          <p
+            role="alert"
+            className="mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs font-semibold leading-snug"
+            style={{ borderColor: '#FCA5A5', backgroundColor: '#FEF2F2', color: '#B91C1C' }}
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {errorPropuesta}
+          </p>
+        )}
+        {avisoFlotante}
       </Bloque>
     )
   }
@@ -705,6 +927,32 @@ export default function SesionEstrategicaCard() {
               {aviso}
             </p>
           ))}
+        </div>
+      )}
+
+      {/* Se eligió otra fecha en vez de la propuesta del consultor: se
+          recuerda cuál se descarta y se permite volver a ella. */}
+      {cita?.estado === ESTADO_CITA.PROPUESTA_MENTOR && (
+        <div
+          role="status"
+          className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-xs leading-relaxed"
+          style={{ backgroundColor: AMBAR_SUAVE, borderColor: AMBAR_BORDE, color: TEXTO }}
+        >
+          <p className="flex items-start gap-2 font-semibold">
+            <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: AMBAR }} aria-hidden="true" />
+            {formatearFechaCita(cita.fecha)
+              ? `Tu consultor propuso el ${formatearFechaCita(cita.fecha)}. Elige otro día y hora libres.`
+              : 'Elige otro día y hora libres en lugar de la propuesta de tu consultor.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setEligiendoOtraFecha(false)}
+            disabled={enviando}
+            className="shrink-0 font-semibold underline underline-offset-2 hover:opacity-80 disabled:opacity-60"
+            style={{ color: VERDE }}
+          >
+            Volver a la propuesta
+          </button>
         </div>
       )}
 
