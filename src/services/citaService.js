@@ -455,13 +455,17 @@ export async function cancelarCita({ filaId, motivo, cita, contacto }) {
  * Webhook de n8n que recibe la aceptación de la fecha propuesta por el
  * consultor (crea el evento y el Meet, y avisa al mentor).
  *
- * Sin valor por defecto, por lo mismo que el de cancelación: reutilizar el
- * de agendado abriría una solicitud nueva en vez de cerrar esta.
+ * Si está definido se le envía un POST con todos los datos. Si no, se usa
+ * el flujo de aprobación de citas de n8n (`URL_APROBAR_CITA_DEFECTO`), que
+ * recibe por GET solo el id de la fila.
  */
 export const URL_WEBHOOK_ACEPTAR_PROPUESTA = import.meta.env.VITE_N8N_WEBHOOK_ACEPTAR_PROPUESTA_URL || ''
 
-/** ¿Hay webhook de aceptación? */
-export const hayWebhookAceptarPropuesta = Boolean(URL_WEBHOOK_ACEPTAR_PROPUESTA)
+/** Webhook de aprobación de citas usado cuando no hay uno configurado. */
+const URL_APROBAR_CITA_DEFECTO = 'https://pymelaunch.app.n8n.cloud/webhook/aprobar-cita'
+
+/** ¿Hay webhook de aceptación? Siempre: como mínimo, el de por defecto. */
+export const hayWebhookAceptarPropuesta = true
 
 /**
  * Marca como confirmada en su fila la cita propuesta por el consultor.
@@ -517,20 +521,28 @@ async function marcarPropuestaAceptadaEnSupabase(filaId, { fechaIso, meetUrl, ac
  * Avisa a n8n de que el emprendedor acepta la fecha propuesta.
  *
  * @param {Record<string, unknown>} aviso
- * @returns {Promise<boolean|null>} `null` si no hay webhook configurado.
+ * @returns {Promise<boolean|null>} `null` si no hay a quién avisar (sin
+ *   webhook propio ni id de fila para el de por defecto).
  */
 async function avisarAceptacionAN8n(aviso) {
-  if (!hayWebhookAceptarPropuesta) return null
+  // El webhook de por defecto identifica la cita solo por el id de su fila.
+  const id = aviso.fila_cita_id ?? aviso.expediente_id
+  if (!URL_WEBHOOK_ACEPTAR_PROPUESTA && !id) return null
 
   const cancelacion = new AbortController()
   const temporizador = setTimeout(() => cancelacion.abort(), TIEMPO_MAXIMO_MS)
   try {
-    const respuesta = await fetch(URL_WEBHOOK_ACEPTAR_PROPUESTA, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aviso),
-      signal: cancelacion.signal,
-    })
+    const respuesta = URL_WEBHOOK_ACEPTAR_PROPUESTA
+      ? await fetch(URL_WEBHOOK_ACEPTAR_PROPUESTA, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(aviso),
+          signal: cancelacion.signal,
+        })
+      : await fetch(`${URL_APROBAR_CITA_DEFECTO}?id=${encodeURIComponent(id)}`, {
+          method: 'GET',
+          signal: cancelacion.signal,
+        })
     if (!respuesta.ok) return false
     const cuerpo = await respuesta.json().catch(() => null)
     return cuerpo?.success !== false
